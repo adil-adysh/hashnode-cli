@@ -1,0 +1,125 @@
+version: "3"
+
+vars:
+  GO: go
+  BIN: hashnode-cli
+  CMD_DIR: cmd/hashnode-cli
+  BUILD_DIR: bin
+
+  SCHEMA_URL: https://gql.hashnode.com
+  SCHEMA_FILE: scripts/schema/hashnode.graphql
+  GENQLIENT_CONFIG: genqlient.yaml
+
+env:
+  GOFLAGS: -mod=readonly
+
+tasks:
+
+  # =========================
+  # Tooling (module-based)
+  # =========================
+
+  tools:
+    desc: Ensure all Go-based tools are available via go.mod
+    deps:
+      - tools:genqlient
+
+  tools:genqlient:
+    desc: Ensure genqlient is present in go.mod
+    cmds:
+      - "{{.GO}} get github.com/Khan/genqlient@latest"
+
+  # =========================
+  # GraphQL
+  # =========================
+
+  schema:introspect:
+    desc: Fetch Hashnode GraphQL schema from server
+    cmds:
+      - rover graph introspect {{.SCHEMA_URL}} > {{.SCHEMA_FILE}}
+    generates:
+      - "{{.SCHEMA_FILE}}"
+
+  gql:generate:
+    desc: Generate GraphQL client (genqlient via go run)
+    deps:
+      - tools:genqlient
+    sources:
+      - "{{.SCHEMA_FILE}}"
+      - internal/api/queries.graphql
+      - "{{.GENQLIENT_CONFIG}}"
+    generates:
+      - internal/api/generated.go
+    cmds:
+      - "{{.GO}} run github.com/Khan/genqlient"
+
+  gql:verify:
+    desc: Verify schema and generated code are in sync
+    cmds:
+      - task: schema:introspect
+      - task: gql:generate
+      - git diff --exit-code
+
+  # =========================
+  # Go lifecycle
+  # =========================
+
+  tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - "{{.GO}} mod tidy"
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - "{{.GO}} fmt ./..."
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - "{{.GO}} vet ./..."
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - "{{.GO}} test ./..."
+
+  lint:
+    desc: Static checks (fmt + vet)
+    deps:
+      - fmt
+      - vet
+
+  build:
+    desc: Build CLI binary
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - "{{.GO}} build -o {{.BUILD_DIR}}/{{.BIN}} ./{{.CMD_DIR}}"
+
+  run:
+    desc: Run CLI locally
+    cmds:
+      - "{{.GO}} run ./{{.CMD_DIR}}"
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+
+  # =========================
+  # CI entrypoints
+  # =========================
+
+  ci:
+    desc: Full CI pipeline
+    deps:
+      - lint
+      - test
+      - gql:verify
+      - build
+
+  default:
+    desc: Default developer workflow
+    deps:
+      - gql:generate
+      - build

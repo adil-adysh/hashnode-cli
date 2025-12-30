@@ -15,7 +15,6 @@ type RemoteIdentity struct {
 	LastChecksum string `yaml:"lastChecksum"` // Hash when we last synced successfully
 }
 
-
 // LoadIdentities reads all .yml files in .hnsync/
 func LoadIdentities() (map[string]RemoteIdentity, error) {
 	identities := make(map[string]RemoteIdentity)

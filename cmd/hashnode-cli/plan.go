@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"adil-adysh/hashnode-cli/internal/diff"
 	"adil-adysh/hashnode-cli/internal/state"
+
+	"github.com/spf13/cobra"
 )
 
 var planCmd = &cobra.Command{
