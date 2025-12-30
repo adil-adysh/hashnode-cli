@@ -12,7 +12,8 @@
 
 # Dependency directories (remove the comment below to include it)
 vendor/
-scripts/schema 
+scripts/schema/hashnode-schema.json
+
 # Go workspace file
 go.work
 

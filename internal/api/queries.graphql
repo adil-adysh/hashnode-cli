@@ -1,0 +1,25 @@
+# internal/api/queries.graphql
+
+mutation UpdatePost($input: UpdatePostInput!) {
+  updatePost(input: $input) {
+    post {
+      id
+      slug
+      updatedAt
+    }
+  }
+}
+
+query GetPublication($id: ObjectId!) {
+  publication(id: $id) {
+    title
+    posts(first: 20) {
+      edges {
+        node {
+          id
+          title
+        }
+      }
+    }
+  }
+}
