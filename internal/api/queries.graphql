@@ -15,29 +15,52 @@ query GetMe {
   }
 }
 
-# --- 2. Content State (For 'plan') ---
-query GetPublicationData($id: ObjectId!) {
+# --- 2. Content State & Import Engine ---
+# This query handles both 'plan' (checking diffs) and 'import' (downloading everything)
+query GetPublicationData($id: ObjectId!, $first: Int!, $after: String) {
   publication(id: $id) {
     title
-    # Fetch Posts to compare checksums
-    posts(first: 50) {
+    posts(first: $first, after: $after) {
       edges {
         node {
           id
           title
           slug
-          content { markdown }
-          series { id name slug } # Get current series assignment
+          brief
+          publishedAt
+          # Content is needed to calculate local checksums and for file creation during import
+          content {
+            markdown
+          }
+          # Metadata for Frontmatter reconstruction
+          tags {
+            name
+            slug
+          }
+          series {
+            id
+            name
+            slug
+          }
+          coverImage {
+            url
+          }
         }
       }
+      # Crucial for the import loop to know if there's more data
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
-    # Fetch Series to map local 'series name' to remote 'ID'
+    # Fetch Series list to allow mapping names to IDs and recreating series folders
     seriesList(first: 50) {
       edges {
         node {
           id
           name
           slug
+          description
         }
       }
     }
@@ -49,20 +72,32 @@ query GetPublicationData($id: ObjectId!) {
 # Publish new post (includes seriesId for auto-assignment)
 mutation PublishPost($input: PublishPostInput!) {
   publishPost(input: $input) {
-    post { id slug url }
+    post {
+      id
+      slug
+      url
+    }
   }
 }
 
 # Update existing post
 mutation UpdatePost($input: UpdatePostInput!) {
   updatePost(input: $input) {
-    post { id slug updatedAt }
+    post {
+      id
+      slug
+      updatedAt
+    }
   }
 }
 
 # Create a new series if it doesn't exist locally
 mutation CreateSeries($input: CreateSeriesInput!) {
   createSeries(input: $input) {
-    series { id name slug }
+    series {
+      id
+      name
+      slug
+    }
   }
-}
+} 

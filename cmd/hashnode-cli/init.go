@@ -33,11 +33,16 @@ var initCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		reader := bufio.NewReader(os.Stdin)
 
-		// 1. Get Token Input
-		fmt.Print("🔑 Enter your Hashnode Personal Access Token: ")
-		token, _ := reader.ReadString('\n')
-		token = strings.TrimSpace(token)
-
+		// 1. Get Token Input (from ENV or prompt)
+		token := os.Getenv("HASHNODE_TOKEN")
+		if token == "" {
+			token = os.Getenv("HASHNODE_API_KEY")
+		}
+		if token == "" {
+			fmt.Print("🔑 Enter your Hashnode Personal Access Token: ")
+			token, _ = reader.ReadString('\n')
+			token = strings.TrimSpace(token)
+		}
 		if token == "" {
 			fmt.Println("❌ Token cannot be empty.")
 			os.Exit(1)
@@ -70,30 +75,35 @@ var initCmd = &cobra.Command{
 
 		fmt.Printf("✅ Authenticated as: @%s\n", user.Username)
 
-		// 4. Auto-detect Publication
-		if len(user.Publications.Edges) == 0 {
+		// 4. Save all Publications to config
+		pubs := user.Publications.Edges
+		if len(pubs) == 0 {
 			fmt.Println("❌ No publications found for this account.")
 			os.Exit(1)
 		}
 
-		// MVP: Pick the first one
-		pubNode := user.Publications.Edges[0].Node
-		fmt.Printf("📂 Found Publication: '%s' (ID: %s)\n", pubNode.Title, pubNode.Id)
+		var allPubs []config.Publication
+		for _, edge := range pubs {
+			allPubs = append(allPubs, config.Publication{
+				ID:    edge.Node.Id,
+				Title: edge.Node.Title,
+				URL:   edge.Node.Url,
+			})
+		}
 
-		// 5. Save Config
 		cfg := config.Config{
-			PublicationID: pubNode.Id,
-			Token:         token,
+			Publications: allPubs,
+			Token:        token,
 		}
 
 		if err := cfg.Save(); err != nil {
-			fmt.Printf("❌ Failed to write hashnode.yml: %v\n", err)
+			fmt.Printf("❌ Failed to write config: %v\n", err)
 			os.Exit(1)
 		}
 
 		fmt.Println("\n🎉 Success! hashnode-cli initialized.")
-		fmt.Println("   Config saved to: hashnode.yml")
-		fmt.Println("   ⚠️  WARNING: Add 'hashnode.yml' to .gitignore so you don't commit your token!")
+		fmt.Printf("   Config saved to: %s\n", config.ConfigPath())
+		fmt.Println("   ⚠️  WARNING: This file contains your token. Keep it safe!")
 	},
 }
 

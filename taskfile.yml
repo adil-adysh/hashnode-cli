@@ -97,9 +97,9 @@ tasks:
       - "{{.GO}} build -o {{.BUILD_DIR}}/{{.BIN}} ./{{.CMD_DIR}}"
 
   run:
-    desc: Run CLI locally
+    desc: Run CLI locally (forwards command args)
     cmds:
-      - "{{.GO}} run ./{{.CMD_DIR}}"
+      - "{{.GO}} run ./{{.CMD_DIR}} {{.CLI_ARGS}}"
 
   clean:
     desc: Remove build artifacts
