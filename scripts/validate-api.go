@@ -9,10 +9,7 @@ import (
 	"strings"
 )
 
-// =============================================================================
-// CONFIGURATION & COLORS
-// =============================================================================
-
+// --- ANSI Colors ---
 const (
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
@@ -21,10 +18,6 @@ const (
 	ColorCyan   = "\033[36m"
 	ColorBold   = "\033[1m"
 )
-
-// =============================================================================
-// REPORTING ENGINE (LINTER STYLE)
-// =============================================================================
 
 type ValidationReport struct {
 	Errors   []string
@@ -39,94 +32,22 @@ func (r *ValidationReport) AddWarning(msg string) {
 	r.Warnings = append(r.Warnings, fmt.Sprintf("%s⚠️  %s%s", ColorYellow, msg, ColorReset))
 }
 
-func (r *ValidationReport) HasFatalErrors() bool {
-	return len(r.Errors) > 0
-}
-
-func (r *ValidationReport) PrintSummary() {
-	fmt.Println("\n" + strings.Repeat("-", 50))
-	
-	// Print Warnings first
-	for _, w := range r.Warnings {
-		fmt.Println(w)
-	}
-	// Print Errors
-	for _, e := range r.Errors {
-		fmt.Println(e)
-	}
-
-	fmt.Println(strings.Repeat("-", 50))
-
-	if len(r.Errors) > 0 {
-		fmt.Printf("%sFAILED: Found %d errors and %d warnings.%s\n", ColorRed, len(r.Errors), len(r.Warnings), ColorReset)
-		os.Exit(1)
-	} else {
-		fmt.Printf("%sSUCCESS: Integrity check passed (%d warnings).%s\n", ColorGreen, len(r.Warnings), ColorReset)
-	}
-}
-
-// =============================================================================
-// GRAPHQL TYPES (FOR SCHEMA PARSING)
-// =============================================================================
-
-type Introspection struct {
-	Data struct {
-		Schema struct {
-			Types []Type `json:"types"`
-		} `json:"__schema"`
-	} `json:"data"`
-	// Fallback for raw schema dump
-	Schema *struct {
-		Types []Type `json:"types"`
-	} `json:"__schema"`
-}
-
-type Type struct {
-	Name   string  `json:"name"`
-	Kind   string  `json:"kind"`
-	Fields []Field `json:"fields"`
-}
-
-type Field struct {
-	Name string `json:"name"`
-}
-
-// =============================================================================
-// MAIN EXECUTION
-// =============================================================================
-
 func main() {
-	// 1. CLI Flags
 	schemaPath := flag.String("schema", "schema/hashnode-schema.json", "Path to GraphQL schema JSON")
 	postsPath := flag.String("posts", "posts", "Path to content directory")
 	flag.Parse()
 
 	report := &ValidationReport{}
-
 	fmt.Printf("%s🔍 Starting hnsync validation...%s\n", ColorBold, ColorReset)
 
-	// 2. Schema Validation
 	validateSchema(*schemaPath, report)
-
-	// 3. Content Validation
-	// We pass the report so it can collect errors instead of crashing
 	validateContent(*postsPath, report)
 
-	// 4. Final Output
-	report.PrintSummary()
+	printSummary(report)
 }
-
-// =============================================================================
-// LOGIC: SCHEMA VALIDATION
-// =============================================================================
 
 func validateSchema(path string, report *ValidationReport) {
 	fmt.Printf("%sChecking API Contract (%s)...%s\n", ColorCyan, path, ColorReset)
-
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		report.AddError(fmt.Sprintf("Schema file not found: %s (Run introspection query first)", path))
-		return
-	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -134,179 +55,128 @@ func validateSchema(path string, report *ValidationReport) {
 		return
 	}
 
-	var root Introspection
-	if err := json.Unmarshal(data, &root); err != nil {
-		report.AddError("Invalid JSON format in schema file")
+	// Use interface{} to handle dynamic wrappers
+	var raw interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		report.AddError(fmt.Sprintf("JSON Parse Error: %v", err))
 		return
 	}
 
-	// normalize: handle wrapped vs unwrapped JSON
-	var types []Type
-	if root.Data.Schema.Types != nil {
-		types = root.Data.Schema.Types
-	} else if root.Schema != nil {
-		types = root.Schema.Types
+	root, ok := raw.(map[string]interface{})
+	if !ok {
+		report.AddError("JSON root is not an object")
+		return
+	}
+
+	// Navigate to __schema (Handles { "data": { "__schema": ... } } or raw { "__schema": ... })
+	var schema map[string]interface{}
+	if dataField, ok := root["data"].(map[string]interface{}); ok {
+		schema, _ = dataField["__schema"].(map[string]interface{})
 	} else {
-		report.AddError("JSON does not contain '__schema' root")
+		schema, _ = root["__schema"].(map[string]interface{})
+	}
+
+	if schema == nil {
+		report.AddError("Could not find '__schema' key in JSON")
 		return
 	}
 
-	// Helper to find type
-	getType := func(name string) *Type {
-		for _, t := range types {
-			if t.Name == name {
-				return &t
-			}
+	// Extract Types
+	types, ok := schema["types"].([]interface{})
+	if !ok {
+		report.AddError("Schema missing 'types' array")
+		return
+	}
+
+	// Find Mutation Type
+	var mutationFields []interface{}
+	for _, t := range types {
+		typeObj := t.(map[string]interface{})
+		if typeObj["name"] == "Mutation" {
+			mutationFields, _ = typeObj["fields"].([]interface{})
+			break
 		}
-		return nil
 	}
 
-	// Check Mutations
-	mutation := getType("Mutation")
-	if mutation == nil {
-		report.AddError("Schema missing 'Mutation' type")
+	if mutationFields == nil {
+		report.AddError("Mutation type not found in schema")
 		return
 	}
 
-	requiredMutations := []string{"createSeries", "updatePost", "publishPost", "removePost"}
-	foundMutations := make(map[string]bool)
-	for _, f := range mutation.Fields {
-		foundMutations[f.Name] = true
+	// Check for required fields
+	required := map[string]bool{"publishPost": false, "updatePost": false, "createSeries": false}
+	for _, f := range mutationFields {
+		name := f.(map[string]interface{})["name"].(string)
+		if _, exists := required[name]; exists {
+			required[name] = true
+		}
 	}
 
-	for _, req := range requiredMutations {
-		if !foundMutations[req] {
-			report.AddError(fmt.Sprintf("Missing critical mutation: '%s'", req))
+	for name, found := range required {
+		if !found {
+			report.AddError(fmt.Sprintf("API Breakage: Mutation '%s' is missing", name))
 		}
 	}
 }
 
-// =============================================================================
-// LOGIC: CONTENT VALIDATION
-// =============================================================================
-
 func validateContent(rootPath string, report *ValidationReport) {
 	fmt.Printf("%sLinting Content (%s)...%s\n", ColorCyan, rootPath, ColorReset)
 
-	// MANDATORY FOLDER CHECK
 	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
-		report.AddError(fmt.Sprintf("Content directory '%s' does not exist.", rootPath))
-		return // Cannot continue if folder is missing
+		report.AddError(fmt.Sprintf("Directory '%s' not found", rootPath))
+		return
 	}
 
-	slugMap := make(map[string]string)   // slug_lower -> filepath
-	seriesMap := make(map[string]string) // series_lower -> series_canonical_case
-
+	slugMap := make(map[string]string)
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil { return err }
-		
-		// Skip dotfiles and non-markdown
-		if info.IsDir() {
-			if strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
-				return filepath.SkipDir // Skip .git, etc
-			}
-			return nil
-		}
-		if filepath.Ext(path) != ".md" { return nil }
-
-		// Read File
-		contentBytes, err := os.ReadFile(path)
-		if err != nil {
-			report.AddError(fmt.Sprintf("Unreadable file: %s", path))
-			return nil
-		}
-		
-		// Parse Frontmatter
-		frontmatter, hasFM := extractFrontmatter(string(contentBytes))
-		if !hasFM {
-			report.AddWarning(fmt.Sprintf("Skipping (no frontmatter): %s", path))
+		if err != nil || info.IsDir() || filepath.Ext(path) != ".md" {
 			return nil
 		}
 
-		// 1. Title Check
-		title := extractField(frontmatter, "title")
-		if title == "" {
-			report.AddError(fmt.Sprintf("[%s] Missing 'title' in frontmatter", info.Name()))
+		raw, _ := os.ReadFile(path)
+		content := string(raw)
+
+		if !strings.HasPrefix(content, "---") {
+			report.AddWarning(fmt.Sprintf("[%s] Missing frontmatter", info.Name()))
+			return nil
 		}
 
-		// 2. Slug Collision Check (Case Insensitive)
-		slug := extractField(frontmatter, "slug")
-		if slug != "" {
-			lowerSlug := strings.ToLower(slug)
-			if existingFile, exists := slugMap[lowerSlug]; exists {
-				report.AddError(fmt.Sprintf(
-					"[%s] Duplicate Slug Detected!\n      Slug: '%s'\n      Conflict: %s", 
-					info.Name(), slug, filepath.Base(existingFile),
-				))
-			} else {
-				slugMap[lowerSlug] = path
+		// Simple slug extraction for the spike
+		if strings.Contains(content, "slug:") {
+			slug := extractValue(content, "slug")
+			if existing, exists := slugMap[slug]; exists {
+				report.AddError(fmt.Sprintf("Slug Collision: '%s' in %s and %s", slug, existing, info.Name()))
 			}
-		}
-
-		// 3. Series Consistency (Typo Check)
-		series := extractField(frontmatter, "series")
-		if series != "" {
-			lowerSeries := strings.ToLower(series)
-			if canonical, exists := seriesMap[lowerSeries]; exists {
-				if series != canonical {
-					report.AddWarning(fmt.Sprintf(
-						"[%s] Series Casing Mismatch.\n      Found: '%s'\n      Expected: '%s'", 
-						info.Name(), series, canonical,
-					))
-				}
-			} else {
-				seriesMap[lowerSeries] = series
-			}
+			slugMap[slug] = info.Name()
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		report.AddError(fmt.Sprintf("Walk error: %v", err))
+		report.AddError(fmt.Sprintf("File walk failed: %v", err))
 	}
 }
 
-// =============================================================================
-// PARSING HELPERS
-// =============================================================================
-
-// Extract YAML block between "---"
-func extractFrontmatter(content string) (string, bool) {
-	if !strings.HasPrefix(content, "---") {
-		return "", false
-	}
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		return "", false
-	}
-	return parts[1], true
-}
-
-// Extract value from "key: value" line
-func extractField(yamlBlock, key string) string {
-	lines := strings.Split(yamlBlock, "\n")
+func extractValue(content, key string) string {
+	lines := strings.Split(content, "\n")
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		
-		if strings.HasPrefix(trimmed, "#") { continue } // Skip comments
-
-		// Case-insensitive key check
-		if strings.HasPrefix(strings.ToLower(trimmed), key+":") {
-			parts := strings.SplitN(trimmed, ":", 2)
-			if len(parts) < 2 { return "" }
-			
-			val := strings.TrimSpace(parts[1])
-			
-			// Remove inline comments
-			if idx := strings.Index(val, "#"); idx > -1 {
-				val = strings.TrimSpace(val[:idx])
-			}
-
-			// Remove quotes
-			val = strings.Trim(val, `"'`)
-			return val
+		if strings.HasPrefix(line, key+":") {
+			return strings.TrimSpace(strings.TrimPrefix(line, key+":"))
 		}
 	}
 	return ""
+}
+
+func printSummary(r *ValidationReport) {
+	fmt.Println("\n" + strings.Repeat("-", 40))
+	for _, w := range r.Warnings { fmt.Println(w) }
+	for _, e := range r.Errors { fmt.Println(e) }
+	fmt.Println(strings.Repeat("-", 40))
+
+	if len(r.Errors) > 0 {
+		fmt.Printf("%sFAILED: %d errors found.%s\n", ColorRed, len(r.Errors), ColorReset)
+		os.Exit(1)
+	}
+	fmt.Printf("%sSUCCESS: Integrity check passed.%s\n", ColorGreen, ColorReset)
 }

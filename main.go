@@ -1,8 +1,8 @@
 package main
 
 import (
+	"hn/cmd"
 	"log"
-	"hnsync/cmd"
 )
 
 func main() {

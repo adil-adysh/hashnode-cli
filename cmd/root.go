@@ -5,9 +5,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "hnsync",
-	Short: "hnsync - Hashnode Git Sync",
-	Long:  "hnsync is a CLI to manage Hashnode blogs from a git repo.",
+	Use:   "hn",
+	Short: "hn - Hashnode Git Sync",
+	Long:  "hn is a CLI to manage Hashnode blogs from a git repo.",
 }
 
 // Execute runs the root command.

@@ -90,12 +90,12 @@ ART       sha256:f9e8...     posts/draft.md                p_54321      draft
 
 ## 4. CLI Commands
 
-### 4.1 `hnsync init`
+### 4.1 `hn init`
 
 * Creates the initial `.hnsync.lock` and config file.
 * Verifies API token.
 
-### 4.2 `hnsync import` (The Onboarding)
+### 4.2 `hn import` (The Onboarding)
 
 * **Goal:** Bootstrap a repo from an existing blog.
 * **Logic:**
@@ -105,7 +105,7 @@ ART       sha256:f9e8...     posts/draft.md                p_54321      draft
 4. Populate `.hnsync.lock`.
 
 
-### 4.3 `hnsync plan` (The Safety Net)
+### 4.3 `hn plan` (The Safety Net)
 
 * **Goal:** Show the user what *will* happen.
 * **Output (TUI):**
@@ -115,7 +115,7 @@ ART       sha256:f9e8...     posts/draft.md                p_54321      draft
 
 
 
-### 4.4 `hnsync apply`
+### 4.4 `hn apply`
 
 * **Goal:** Execute the changes.
 * **Logic:**
@@ -168,12 +168,12 @@ hnsync/
 ### 6.1 Draft to Publish
 
 1. User changes `published: false` → `published: true` in Frontmatter.
-2. `hnsync plan` detects:
+2. `hn plan` detects:
 * Content Hash: Match (or mismatch).
 * Metadata Change: `published` changed.
 
 
-3. `hnsync apply`:
+3. `hn apply`:
 * Sends `updatePost` mutation.
 * Updates Lock File status column.
 

@@ -12,7 +12,7 @@
 
 # Dependency directories (remove the comment below to include it)
 vendor/
-
+scripts/schema 
 # Go workspace file
 go.work
 
