@@ -23,3 +23,6 @@ go.work
 
 # Environment files
 .env
+
+# Runtime lock file
+hashnode.lock

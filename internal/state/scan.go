@@ -27,7 +27,7 @@ func ScanDirectory(root string) (map[string]LocalPost, error) {
 		if err != nil {
 			return err
 		}
-		// Ignore hidden directories (.git, .hnsync, node_modules)
+		// Ignore hidden directories (.git, .hashnode, node_modules)
 		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
 			return filepath.SkipDir
 		}

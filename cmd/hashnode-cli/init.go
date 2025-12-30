@@ -10,10 +10,12 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	// Update this import path to match your go.mod module name
 	"adil-adysh/hashnode-cli/internal/api"
 	"adil-adysh/hashnode-cli/internal/config"
+	"adil-adysh/hashnode-cli/internal/state"
 )
 
 // authedTransport injects the Personal Access Token into every request
@@ -75,35 +77,82 @@ var initCmd = &cobra.Command{
 
 		fmt.Printf("✅ Authenticated as: @%s\n", user.Username)
 
-		// 4. Save all Publications to config
+		// 4. Let user select a single publication (one blog per repo)
 		pubs := user.Publications.Edges
 		if len(pubs) == 0 {
 			fmt.Println("❌ No publications found for this account.")
 			os.Exit(1)
 		}
 
-		var allPubs []config.Publication
-		for _, edge := range pubs {
-			allPubs = append(allPubs, config.Publication{
-				ID:    edge.Node.Id,
-				Title: edge.Node.Title,
-				URL:   edge.Node.Url,
-			})
+		fmt.Println("\nYour Publications:")
+		for i, edge := range pubs {
+			fmt.Printf("  [%d] %s (ID: %s)\n", i+1, edge.Node.Title, edge.Node.Id)
 		}
 
-		cfg := config.Config{
-			Publications: allPubs,
-			Token:        token,
+		var selected int
+		for {
+			fmt.Printf("Select a publication [1-%d]: ", len(pubs))
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+			n, err := fmt.Sscanf(input, "%d", &selected)
+			if err == nil && n == 1 && selected >= 1 && selected <= len(pubs) {
+				break
+			}
+			fmt.Println("Invalid selection. Please enter a number from the list.")
 		}
 
-		if err := cfg.Save(); err != nil {
-			fmt.Printf("❌ Failed to write config: %v\n", err)
+		pubNode := pubs[selected-1].Node
+		fmt.Printf("📂 Selected Publication: '%s' (ID: %s)\n", pubNode.Title, pubNode.Id)
+
+		// 5. Ensure repo-level .hashnode state directory and blog.yml
+		if err := state.EnsureStateDir(); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to create state dir: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("\n🎉 Success! hashnode-cli initialized.")
-		fmt.Printf("   Config saved to: %s\n", config.ConfigPath())
-		fmt.Println("   ⚠️  WARNING: This file contains your token. Keep it safe!")
+		blogPath := state.StatePath("blog.yml")
+
+		if _, err := os.Stat(blogPath); err == nil {
+			fmt.Fprintf(os.Stderr, "❌ Repository already initialized: %s exists\n", blogPath)
+			os.Exit(1)
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "❌ Failed to check state: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Compose blog.yml content (system-owned)
+		blog := struct {
+			PublicationID   string `yaml:"publication_id"`
+			PublicationSlug string `yaml:"publication_slug"`
+			Title           string `yaml:"title"`
+			OwnerUsername   string `yaml:"owner_username"`
+		}{
+			PublicationID:   pubNode.Id,
+			PublicationSlug: pubNode.Url,
+			Title:           pubNode.Title,
+			OwnerUsername:   user.Username,
+		}
+
+		data, err := yaml.Marshal(blog)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to marshal blog state: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := os.WriteFile(blogPath, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to write %s: %v\n", blogPath, err)
+			os.Exit(1)
+		}
+
+		// 6. Save token to user config (home) for subsequent API calls (non-authoritative)
+		cfg := config.Config{Publications: nil, Token: token}
+		if err := cfg.Save(); err != nil {
+			fmt.Printf("⚠️  Failed to write home config: %v\n", err)
+		}
+
+		fmt.Println("\n🎉 Success! repository initialized for a single Hashnode publication.")
+		fmt.Printf("   State written to: %s\n", blogPath)
+		fmt.Println("   ⚠️  WARNING: files under .hashnode/ are CLI-owned; do not edit them by hand.")
 	},
 }
 

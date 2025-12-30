@@ -3,6 +3,7 @@ package diff
 import (
 	"adil-adysh/hashnode-cli/internal/state"
 	"fmt"
+	"os"
 )
 
 type ActionType string
@@ -15,50 +16,94 @@ const (
 )
 
 type PlanItem struct {
-	Type      ActionType
-	Slug      string
-	Path      string
-	Reason    string
-	LocalPost state.LocalPost
+	Type   ActionType
+	ID     string // local_id from article.yml
+	Title  string
+	Path   string
+	Reason string
 }
 
-// GeneratePlan compares Local Files against Stored State
-func GeneratePlan(localPosts map[string]state.LocalPost, storedState map[string]state.RemoteIdentity) []PlanItem {
+// GeneratePlan compares the authoritative .hashnode/article.yml entries
+// against the current filesystem. The article registry is the source of truth
+// for identity; paths are metadata.
+func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 	var plan []PlanItem
 
-	// 1. Check every local post
-	for slug, post := range localPosts {
-		identity, exists := storedState[slug]
+	for _, a := range articles {
+		path := a.MarkdownPath
+		// if path is empty or file missing, mark accordingly
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			// If the article was previously published remotely but the local file is gone,
+			// show a DELETE action so the user can remove the remote post.
+			if a.RemotePostID != "" {
+				plan = append(plan, PlanItem{
+					Type:   ActionDelete,
+					ID:     a.LocalID,
+					Title:  a.Title,
+					Path:   path,
+					Reason: "Local markdown missing; remote post exists and may be removed",
+				})
+			} else {
+				plan = append(plan, PlanItem{
+					Type:   ActionSkip,
+					ID:     a.LocalID,
+					Title:  a.Title,
+					Path:   path,
+					Reason: "Markdown file missing or inaccessible",
+				})
+			}
+			continue
+		}
 
-		if !exists {
-			// Case A: It's a new file we haven't tracked yet
+		// Read file and compute checksum
+		data, err := os.ReadFile(path)
+		if err != nil {
 			plan = append(plan, PlanItem{
-				Type:      ActionCreate,
-				Slug:      slug,
-				Path:      post.Path,
-				Reason:    "New local file detected",
-				LocalPost: post,
+				Type:   ActionSkip,
+				ID:     a.LocalID,
+				Title:  a.Title,
+				Path:   path,
+				Reason: fmt.Sprintf("Failed to read file: %v", err),
 			})
 			continue
 		}
 
-		// Case B: We track it, but did the content change?
-		if post.Checksum != identity.LastChecksum {
+		current := state.ChecksumFromContent(data)
+
+		// If not yet published remotely
+		if a.RemotePostID == "" {
+			// If checksum matches registry, still needs create; if differs, still create
 			plan = append(plan, PlanItem{
-				Type:      ActionUpdate,
-				Slug:      slug,
-				Path:      post.Path,
-				Reason:    "Content changed since last sync",
-				LocalPost: post,
+				Type:   ActionCreate,
+				ID:     a.LocalID,
+				Title:  a.Title,
+				Path:   path,
+				Reason: "Not published remotely",
 			})
-		} else {
-			// Case C: Everything matches
-			plan = append(plan, PlanItem{
-				Type:   ActionSkip,
-				Slug:   slug,
-				Reason: "Up to date",
-			})
+			continue
 		}
+
+		// If checksums differ -> update
+		if current != a.Checksum {
+			plan = append(plan, PlanItem{
+				Type:   ActionUpdate,
+				ID:     a.LocalID,
+				Title:  a.Title,
+				Path:   path,
+				Reason: "Local content differs from last synced checksum",
+			})
+			continue
+		}
+
+		// Otherwise up-to-date
+		plan = append(plan, PlanItem{
+			Type:   ActionSkip,
+			ID:     a.LocalID,
+			Title:  a.Title,
+			Path:   path,
+			Reason: "Up to date",
+		})
 	}
 
 	return plan
@@ -71,15 +116,15 @@ func PrintPlanSummary(plan []PlanItem) {
 	for _, item := range plan {
 		switch item.Type {
 		case ActionCreate:
-			fmt.Printf("🟢 [CREATE] %s\n   Reason: %s\n", item.Slug, item.Reason)
+			fmt.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionUpdate:
-			fmt.Printf("🟡 [UPDATE] %s\n   Reason: %s\n", item.Slug, item.Reason)
+			fmt.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionDelete:
-			fmt.Printf("🔴 [DELETE] %s\n   Reason: %s\n", item.Slug, item.Reason)
+			fmt.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		}
 	}
 	fmt.Println("---------------------------------------------------")
-	fmt.Println("Run 'hnsync apply' to execute these changes.")
+	fmt.Println("Run 'hashnode apply' to execute these changes.")
 }
 
 func countNonSkip(plan []PlanItem) int {

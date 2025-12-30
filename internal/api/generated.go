@@ -290,6 +290,8 @@ type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNod
 	Title string `json:"title"`
 	// The slug of the post. Used as address of the post on blog. Example - https://johndoe.com/my-post-slug
 	Slug string `json:"slug"`
+	// The publish date of the post.
+	PublishedAt *time.Time `json:"publishedAt"`
 	// Content of the post. Contains HTML and Markdown version of the post content.
 	Content GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent `json:"content"`
 	// Information of the series the post belongs to.
@@ -935,6 +937,7 @@ query GetPublicationData ($id: ObjectId!) {
 					id
 					title
 					slug
+					publishedAt
 					content {
 						markdown
 					}
@@ -1052,6 +1055,64 @@ func UpdatePost(
 	}
 
 	data_ = &UpdatePostResponse{}
+	resp_ := &graphql.Response{Data: data_}
+
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
+	)
+
+	return data_, err_
+}
+
+// __DeletePostInput is used internally by genqlient
+type __DeletePostInput struct {
+	Id string `json:"id"`
+}
+
+// DeletePostDeletePostDeletePostPayload includes the requested fields of the GraphQL type DeletePostPayload.
+type DeletePostDeletePostDeletePostPayload struct {
+	Success bool `json:"success"`
+}
+
+// GetSuccess returns DeletePostDeletePostDeletePostPayload.Success
+func (v *DeletePostDeletePostDeletePostPayload) GetSuccess() bool { return v.Success }
+
+// DeletePostResponse is returned by DeletePost on success.
+type DeletePostResponse struct {
+	DeletePost DeletePostDeletePostDeletePostPayload `json:"deletePost"`
+}
+
+// GetDeletePost returns DeletePostResponse.DeletePost
+func (v *DeletePostResponse) GetDeletePost() DeletePostDeletePostDeletePostPayload {
+	return v.DeletePost
+}
+
+// The mutation executed by DeletePost.
+const DeletePost_Operation = `
+mutation DeletePost ($id: ObjectId!) {
+	deletePost(id: $id) {
+		success
+	}
+}
+`
+
+// Delete an existing post by id
+func DeletePost(
+	ctx_ context.Context,
+	client_ graphql.Client,
+	id string,
+) (data_ *DeletePostResponse, err_ error) {
+	req_ := &graphql.Request{
+		OpName: "DeletePost",
+		Query:  DeletePost_Operation,
+		Variables: &__DeletePostInput{
+			Id: id,
+		},
+	}
+
+	data_ = &DeletePostResponse{}
 	resp_ := &graphql.Response{Data: data_}
 
 	err_ = client_.MakeRequest(

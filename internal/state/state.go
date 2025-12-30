@@ -16,7 +16,7 @@ type PostState struct {
 	RemoteURL    string `yaml:"remoteUrl"`    // For user convenience
 }
 
-const StateDir = ".hnsync"
+const StateDir = ".hashnode"
 
 // EnsureStateDir creates the hidden folder if it doesn't exist
 func EnsureStateDir() error {
