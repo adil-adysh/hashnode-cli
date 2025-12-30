@@ -12,256 +12,737 @@ import (
 // Contains information about banner image options of the post. Like URL of the banner image, attribution, etc.
 type BannerImageOptionsInput struct {
 	// The URL of the banner image.
-	BannerImageURL string `json:"bannerImageURL"`
+	BannerImageURL *string `json:"bannerImageURL"`
 }
 
 // GetBannerImageURL returns BannerImageOptionsInput.BannerImageURL, and is useful for accessing the field via an interface.
-func (v *BannerImageOptionsInput) GetBannerImageURL() string { return v.BannerImageURL }
+func (v *BannerImageOptionsInput) GetBannerImageURL() *string { return v.BannerImageURL }
 
 // Contains information about cover image options of the post. Like URL of the cover image, attribution, etc.
 type CoverImageOptionsInput struct {
 	// The URL of the cover image.
-	CoverImageURL string `json:"coverImageURL"`
+	CoverImageURL *string `json:"coverImageURL"`
 	// A flag to indicate if the cover attribution is hidden, used when cover was chosen from unsplash.
-	IsCoverAttributionHidden bool `json:"isCoverAttributionHidden"`
+	IsCoverAttributionHidden *bool `json:"isCoverAttributionHidden"`
 	// Information about the cover image attribution.
-	CoverImageAttribution string `json:"coverImageAttribution"`
+	CoverImageAttribution *string `json:"coverImageAttribution"`
 	// The name of the cover image photographer, used when cover was chosen from unsplash.
-	CoverImagePhotographer string `json:"coverImagePhotographer"`
+	CoverImagePhotographer *string `json:"coverImagePhotographer"`
 	// A flag to indicate if the cover image is sticked to bottom.
-	StickCoverToBottom bool `json:"stickCoverToBottom"`
+	StickCoverToBottom *bool `json:"stickCoverToBottom"`
 }
 
 // GetCoverImageURL returns CoverImageOptionsInput.CoverImageURL, and is useful for accessing the field via an interface.
-func (v *CoverImageOptionsInput) GetCoverImageURL() string { return v.CoverImageURL }
+func (v *CoverImageOptionsInput) GetCoverImageURL() *string { return v.CoverImageURL }
 
 // GetIsCoverAttributionHidden returns CoverImageOptionsInput.IsCoverAttributionHidden, and is useful for accessing the field via an interface.
-func (v *CoverImageOptionsInput) GetIsCoverAttributionHidden() bool {
+func (v *CoverImageOptionsInput) GetIsCoverAttributionHidden() *bool {
 	return v.IsCoverAttributionHidden
 }
 
 // GetCoverImageAttribution returns CoverImageOptionsInput.CoverImageAttribution, and is useful for accessing the field via an interface.
-func (v *CoverImageOptionsInput) GetCoverImageAttribution() string { return v.CoverImageAttribution }
+func (v *CoverImageOptionsInput) GetCoverImageAttribution() *string { return v.CoverImageAttribution }
 
 // GetCoverImagePhotographer returns CoverImageOptionsInput.CoverImagePhotographer, and is useful for accessing the field via an interface.
-func (v *CoverImageOptionsInput) GetCoverImagePhotographer() string { return v.CoverImagePhotographer }
+func (v *CoverImageOptionsInput) GetCoverImagePhotographer() *string { return v.CoverImagePhotographer }
 
 // GetStickCoverToBottom returns CoverImageOptionsInput.StickCoverToBottom, and is useful for accessing the field via an interface.
-func (v *CoverImageOptionsInput) GetStickCoverToBottom() bool { return v.StickCoverToBottom }
+func (v *CoverImageOptionsInput) GetStickCoverToBottom() *bool { return v.StickCoverToBottom }
 
-// GetPublicationPublication includes the requested fields of the GraphQL type Publication.
+// CreateSeriesCreateSeriesCreateSeriesPayload includes the requested fields of the GraphQL type CreateSeriesPayload.
+type CreateSeriesCreateSeriesCreateSeriesPayload struct {
+	// Returns the created series.
+	Series CreateSeriesCreateSeriesCreateSeriesPayloadSeries `json:"series"`
+}
+
+// GetSeries returns CreateSeriesCreateSeriesCreateSeriesPayload.Series, and is useful for accessing the field via an interface.
+func (v *CreateSeriesCreateSeriesCreateSeriesPayload) GetSeries() CreateSeriesCreateSeriesCreateSeriesPayloadSeries {
+	return v.Series
+}
+
+// CreateSeriesCreateSeriesCreateSeriesPayloadSeries includes the requested fields of the GraphQL type Series.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the series.
+// A series is a collection of posts that are related to each other.
+type CreateSeriesCreateSeriesCreateSeriesPayloadSeries struct {
+	// The ID of the series.
+	Id string `json:"id"`
+	// The name of the series. Shown in series page.
+	Name string `json:"name"`
+	// The slug of the series. Used to access series page.  Example https://johndoe.com/series/series-slug
+	Slug string `json:"slug"`
+}
+
+// GetId returns CreateSeriesCreateSeriesCreateSeriesPayloadSeries.Id, and is useful for accessing the field via an interface.
+func (v *CreateSeriesCreateSeriesCreateSeriesPayloadSeries) GetId() string { return v.Id }
+
+// GetName returns CreateSeriesCreateSeriesCreateSeriesPayloadSeries.Name, and is useful for accessing the field via an interface.
+func (v *CreateSeriesCreateSeriesCreateSeriesPayloadSeries) GetName() string { return v.Name }
+
+// GetSlug returns CreateSeriesCreateSeriesCreateSeriesPayloadSeries.Slug, and is useful for accessing the field via an interface.
+func (v *CreateSeriesCreateSeriesCreateSeriesPayloadSeries) GetSlug() string { return v.Slug }
+
+type CreateSeriesInput struct {
+	// The name of the series.
+	Name string `json:"name"`
+	// The slug of the series. Used to access series page.  Example https://johndoe.com/series/series-slug
+	Slug string `json:"slug"`
+	// The id of the publication the series belongs to.
+	PublicationId string `json:"publicationId"`
+	// The description of the series. Accepts markdown.
+	DescriptionMarkdown *string `json:"descriptionMarkdown"`
+	// The cover image of the series.
+	CoverImage *string `json:"coverImage"`
+	// The sort order of the series, determines if the latest posts should appear first or last in series.
+	SortOrder *SortOrder `json:"sortOrder"`
+}
+
+// GetName returns CreateSeriesInput.Name, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetName() string { return v.Name }
+
+// GetSlug returns CreateSeriesInput.Slug, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetSlug() string { return v.Slug }
+
+// GetPublicationId returns CreateSeriesInput.PublicationId, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetPublicationId() string { return v.PublicationId }
+
+// GetDescriptionMarkdown returns CreateSeriesInput.DescriptionMarkdown, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetDescriptionMarkdown() *string { return v.DescriptionMarkdown }
+
+// GetCoverImage returns CreateSeriesInput.CoverImage, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetCoverImage() *string { return v.CoverImage }
+
+// GetSortOrder returns CreateSeriesInput.SortOrder, and is useful for accessing the field via an interface.
+func (v *CreateSeriesInput) GetSortOrder() *SortOrder { return v.SortOrder }
+
+// CreateSeriesResponse is returned by CreateSeries on success.
+type CreateSeriesResponse struct {
+	// Creates a new series.
+	CreateSeries CreateSeriesCreateSeriesCreateSeriesPayload `json:"createSeries"`
+}
+
+// GetCreateSeries returns CreateSeriesResponse.CreateSeries, and is useful for accessing the field via an interface.
+func (v *CreateSeriesResponse) GetCreateSeries() CreateSeriesCreateSeriesCreateSeriesPayload {
+	return v.CreateSeries
+}
+
+// GetMeMeMyUser includes the requested fields of the GraphQL type MyUser.
+// The GraphQL type's documentation follows.
+//
+// Basic information about the authenticated user.
+// User must be authenticated to use this type.
+type GetMeMeMyUser struct {
+	// The ID of the user. It can be used to identify the user.
+	Id string `json:"id"`
+	// The username of the user. It is unique and tied with user's profile URL. Example - https://hashnode.com/@username
+	Username string `json:"username"`
+	// Publications associated with the user. Includes personal and team publications.
+	Publications GetMeMeMyUserPublicationsUserPublicationsConnection `json:"publications"`
+}
+
+// GetId returns GetMeMeMyUser.Id, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUser) GetId() string { return v.Id }
+
+// GetUsername returns GetMeMeMyUser.Username, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUser) GetUsername() string { return v.Username }
+
+// GetPublications returns GetMeMeMyUser.Publications, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUser) GetPublications() GetMeMeMyUserPublicationsUserPublicationsConnection {
+	return v.Publications
+}
+
+// GetMeMeMyUserPublicationsUserPublicationsConnection includes the requested fields of the GraphQL type UserPublicationsConnection.
+// The GraphQL type's documentation follows.
+//
+// Connection to get list of publications.
+// Returns a list of edges which contains the publications and cursor to the last item of the previous page.
+type GetMeMeMyUserPublicationsUserPublicationsConnection struct {
+	// A list of edges of publications connection.
+	Edges []GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge `json:"edges"`
+}
+
+// GetEdges returns GetMeMeMyUserPublicationsUserPublicationsConnection.Edges, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUserPublicationsUserPublicationsConnection) GetEdges() []GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge {
+	return v.Edges
+}
+
+// GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge includes the requested fields of the GraphQL type UserPublicationsEdge.
+// The GraphQL type's documentation follows.
+//
+// An edge that contains a node of type publication and cursor to the node.
+type GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge struct {
+	// Node containing the publication.
+	Node GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication `json:"node"`
+}
+
+// GetNode returns GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge.Node, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdge) GetNode() GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication {
+	return v.Node
+}
+
+// GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication includes the requested fields of the GraphQL type Publication.
 // The GraphQL type's documentation follows.
 //
 // Contains basic information about the publication.
 // A publication is a blog that can be created for a user or a team.
-type GetPublicationPublication struct {
+type GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication struct {
+	// The ID of the publication.
+	Id string `json:"id"`
+	// The title of the publication.
+	// Title is used as logo if logo is not provided.
+	Title string `json:"title"`
+	// The domain of the publication. Used to access publication. Example https://johndoe.com
+	Url string `json:"url"`
+}
+
+// GetId returns GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication.Id, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication) GetId() string {
+	return v.Id
+}
+
+// GetTitle returns GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication.Title, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication) GetTitle() string {
+	return v.Title
+}
+
+// GetUrl returns GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication.Url, and is useful for accessing the field via an interface.
+func (v *GetMeMeMyUserPublicationsUserPublicationsConnectionEdgesUserPublicationsEdgeNodePublication) GetUrl() string {
+	return v.Url
+}
+
+// GetMeResponse is returned by GetMe on success.
+type GetMeResponse struct {
+	// Returns the current authenticated user. Only available to the authenticated user.
+	Me GetMeMeMyUser `json:"me"`
+}
+
+// GetMe returns GetMeResponse.Me, and is useful for accessing the field via an interface.
+func (v *GetMeResponse) GetMe() GetMeMeMyUser { return v.Me }
+
+// GetPublicationDataPublication includes the requested fields of the GraphQL type Publication.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the publication.
+// A publication is a blog that can be created for a user or a team.
+type GetPublicationDataPublication struct {
 	// The title of the publication.
 	// Title is used as logo if logo is not provided.
 	Title string `json:"title"`
 	// Returns the list of posts in the publication.
-	Posts GetPublicationPublicationPostsPublicationPostConnection `json:"posts"`
+	Posts GetPublicationDataPublicationPostsPublicationPostConnection `json:"posts"`
+	// Returns the list of series in the publication.
+	SeriesList GetPublicationDataPublicationSeriesListSeriesConnection `json:"seriesList"`
 }
 
-// GetTitle returns GetPublicationPublication.Title, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublication) GetTitle() string { return v.Title }
+// GetTitle returns GetPublicationDataPublication.Title, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublication) GetTitle() string { return v.Title }
 
-// GetPosts returns GetPublicationPublication.Posts, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublication) GetPosts() GetPublicationPublicationPostsPublicationPostConnection {
+// GetPosts returns GetPublicationDataPublication.Posts, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublication) GetPosts() GetPublicationDataPublicationPostsPublicationPostConnection {
 	return v.Posts
 }
 
-// GetPublicationPublicationPostsPublicationPostConnection includes the requested fields of the GraphQL type PublicationPostConnection.
+// GetSeriesList returns GetPublicationDataPublication.SeriesList, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublication) GetSeriesList() GetPublicationDataPublicationSeriesListSeriesConnection {
+	return v.SeriesList
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnection includes the requested fields of the GraphQL type PublicationPostConnection.
 // The GraphQL type's documentation follows.
 //
 // Connection for posts within a publication. Contains a list of edges containing nodes.
 // Each node is a post.
 // Page info contains information about pagination like hasNextPage and endCursor.
-type GetPublicationPublicationPostsPublicationPostConnection struct {
+type GetPublicationDataPublicationPostsPublicationPostConnection struct {
 	// A list of edges containing Post information
-	Edges []GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge `json:"edges"`
+	Edges []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge `json:"edges"`
 }
 
-// GetEdges returns GetPublicationPublicationPostsPublicationPostConnection.Edges, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublicationPostsPublicationPostConnection) GetEdges() []GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge {
+// GetEdges returns GetPublicationDataPublicationPostsPublicationPostConnection.Edges, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnection) GetEdges() []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge {
 	return v.Edges
 }
 
-// GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge includes the requested fields of the GraphQL type PostEdge.
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge includes the requested fields of the GraphQL type PostEdge.
 // The GraphQL type's documentation follows.
 //
 // Contains a post and a cursor for pagination.
-type GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge struct {
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge struct {
 	// The node holding the Post information
-	Node GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost `json:"node"`
+	Node GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost `json:"node"`
 }
 
-// GetNode returns GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge.Node, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdge) GetNode() GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost {
+// GetNode returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge.Node, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge) GetNode() GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost {
 	return v.Node
 }
 
-// GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost includes the requested fields of the GraphQL type Post.
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost includes the requested fields of the GraphQL type Post.
 // The GraphQL type's documentation follows.
 //
 // Contains basic information about the post.
 // A post is a published article on Hashnode.
-type GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost struct {
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost struct {
 	// The ID of the post. Used to uniquely identify the post.
 	Id string `json:"id"`
 	// The title of the post.
 	Title string `json:"title"`
+	// The slug of the post. Used as address of the post on blog. Example - https://johndoe.com/my-post-slug
+	Slug string `json:"slug"`
+	// Content of the post. Contains HTML and Markdown version of the post content.
+	Content GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent `json:"content"`
+	// Information of the series the post belongs to.
+	Series *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries `json:"series"`
 }
 
-// GetId returns GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Id, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetId() string {
+// GetId returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Id, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetId() string {
 	return v.Id
 }
 
-// GetTitle returns GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Title, and is useful for accessing the field via an interface.
-func (v *GetPublicationPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetTitle() string {
+// GetTitle returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Title, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetTitle() string {
 	return v.Title
 }
 
-// GetPublicationResponse is returned by GetPublication on success.
-type GetPublicationResponse struct {
-	// Returns the publication with the given ID or host.
-	// User can pass anyone of them.
-	Publication GetPublicationPublication `json:"publication"`
+// GetSlug returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Slug, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetSlug() string {
+	return v.Slug
 }
 
-// GetPublication returns GetPublicationResponse.Publication, and is useful for accessing the field via an interface.
-func (v *GetPublicationResponse) GetPublication() GetPublicationPublication { return v.Publication }
+// GetContent returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Content, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetContent() GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent {
+	return v.Content
+}
+
+// GetSeries returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Series, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetSeries() *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries {
+	return v.Series
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent includes the requested fields of the GraphQL type Content.
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent struct {
+	// The Markdown version of the content.
+	Markdown string `json:"markdown"`
+}
+
+// GetMarkdown returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent.Markdown, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent) GetMarkdown() string {
+	return v.Markdown
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries includes the requested fields of the GraphQL type Series.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the series.
+// A series is a collection of posts that are related to each other.
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries struct {
+	// The ID of the series.
+	Id string `json:"id"`
+	// The name of the series. Shown in series page.
+	Name string `json:"name"`
+	// The slug of the series. Used to access series page.  Example https://johndoe.com/series/series-slug
+	Slug string `json:"slug"`
+}
+
+// GetId returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries.Id, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries) GetId() string {
+	return v.Id
+}
+
+// GetName returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries.Name, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries) GetName() string {
+	return v.Name
+}
+
+// GetSlug returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries.Slug, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries) GetSlug() string {
+	return v.Slug
+}
+
+// GetPublicationDataPublicationSeriesListSeriesConnection includes the requested fields of the GraphQL type SeriesConnection.
+// The GraphQL type's documentation follows.
+//
+// Connection for Series. Contains a list of edges containing nodes.
+// Each node is a Series.
+// Page info contains information about pagination like hasNextPage and endCursor.
+type GetPublicationDataPublicationSeriesListSeriesConnection struct {
+	// A list of edges containing Series information
+	Edges []GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge `json:"edges"`
+}
+
+// GetEdges returns GetPublicationDataPublicationSeriesListSeriesConnection.Edges, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnection) GetEdges() []GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge {
+	return v.Edges
+}
+
+// GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge includes the requested fields of the GraphQL type SeriesEdge.
+// The GraphQL type's documentation follows.
+//
+// Contains a Series and a cursor for pagination.
+type GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge struct {
+	// The node holding the Series information
+	Node GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries `json:"node"`
+}
+
+// GetNode returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge.Node, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge) GetNode() GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries {
+	return v.Node
+}
+
+// GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries includes the requested fields of the GraphQL type Series.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the series.
+// A series is a collection of posts that are related to each other.
+type GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries struct {
+	// The ID of the series.
+	Id string `json:"id"`
+	// The name of the series. Shown in series page.
+	Name string `json:"name"`
+	// The slug of the series. Used to access series page.  Example https://johndoe.com/series/series-slug
+	Slug string `json:"slug"`
+}
+
+// GetId returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Id, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries) GetId() string {
+	return v.Id
+}
+
+// GetName returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Name, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries) GetName() string {
+	return v.Name
+}
+
+// GetSlug returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Slug, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries) GetSlug() string {
+	return v.Slug
+}
+
+// GetPublicationDataResponse is returned by GetPublicationData on success.
+type GetPublicationDataResponse struct {
+	// Returns the publication with the given ID or host.
+	// User can pass anyone of them.
+	Publication *GetPublicationDataPublication `json:"publication"`
+}
+
+// GetPublication returns GetPublicationDataResponse.Publication, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataResponse) GetPublication() *GetPublicationDataPublication {
+	return v.Publication
+}
 
 // Contains information about meta tags. Used for SEO purpose.
 type MetaTagsInput struct {
 	// The title of the post used in og:title for SEO.
-	Title string `json:"title"`
+	Title *string `json:"title"`
 	// The description of the post used in og:description for SEO.
-	Description string `json:"description"`
+	Description *string `json:"description"`
 	// The image URL of the post used in og:image for SEO.
-	Image string `json:"image"`
+	Image *string `json:"image"`
 }
 
 // GetTitle returns MetaTagsInput.Title, and is useful for accessing the field via an interface.
-func (v *MetaTagsInput) GetTitle() string { return v.Title }
+func (v *MetaTagsInput) GetTitle() *string { return v.Title }
 
 // GetDescription returns MetaTagsInput.Description, and is useful for accessing the field via an interface.
-func (v *MetaTagsInput) GetDescription() string { return v.Description }
+func (v *MetaTagsInput) GetDescription() *string { return v.Description }
 
 // GetImage returns MetaTagsInput.Image, and is useful for accessing the field via an interface.
-func (v *MetaTagsInput) GetImage() string { return v.Image }
+func (v *MetaTagsInput) GetImage() *string { return v.Image }
+
+// Contains information about the post to be published.
+type PublishPostInput struct {
+	// The ID of the draft to be published.
+	// If an ID is provided, all other input fields are ignored. The corresponding draft is used to create the post.
+	DraftId *string `json:"draftId"`
+	// The title of the post.
+	Title string `json:"title"`
+	// The subtitle of the post.
+	Subtitle *string `json:"subtitle"`
+	// The ID of publication the post belongs to.
+	PublicationId string `json:"publicationId"`
+	// Content of the post in markdown format.
+	ContentMarkdown string `json:"contentMarkdown"`
+	// Date when the post is published.
+	PublishedAt *time.Time `json:"publishedAt"`
+	// Options for the cover image of the post.
+	CoverImageOptions *CoverImageOptionsInput `json:"coverImageOptions"`
+	// Options for the banner image of the post.
+	// It is similar to cover image but users can decide to render banner image of single post view.
+	BannerImageOptions *BannerImageOptionsInput `json:"bannerImageOptions"`
+	// Slug of the post.
+	Slug *string `json:"slug"`
+	// The URL of the original article if the post is imported from an external source.
+	OriginalArticleURL *string `json:"originalArticleURL"`
+	// A list of tags to add to the post. You can get a list of popular tags available on Hashnode here.
+	// https://github.com/Hashnode/support/blob/main/misc/tags.json
+	Tags []PublishPostTagInput `json:"tags"`
+	// A flag to indicate if the comments are disabled for the post.
+	DisableComments *bool `json:"disableComments"`
+	// Information about the meta tags added to the post, used for SEO purpose.
+	MetaTags *MetaTagsInput `json:"metaTags"`
+	// Publish the post on behalf of another user who is a member of the publication.
+	//
+	// Only applicable for team publications.
+	PublishAs *string `json:"publishAs"`
+	// Providing a seriesId will add the post to that series.
+	SeriesId *string `json:"seriesId"`
+	// Settings for the post like table of contents and newsletter activation.
+	Settings *PublishPostSettingsInput `json:"settings"`
+	// Ids of the co-authors of the post.
+	CoAuthors []string `json:"coAuthors"`
+}
+
+// GetDraftId returns PublishPostInput.DraftId, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetDraftId() *string { return v.DraftId }
+
+// GetTitle returns PublishPostInput.Title, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetTitle() string { return v.Title }
+
+// GetSubtitle returns PublishPostInput.Subtitle, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetSubtitle() *string { return v.Subtitle }
+
+// GetPublicationId returns PublishPostInput.PublicationId, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetPublicationId() string { return v.PublicationId }
+
+// GetContentMarkdown returns PublishPostInput.ContentMarkdown, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetContentMarkdown() string { return v.ContentMarkdown }
+
+// GetPublishedAt returns PublishPostInput.PublishedAt, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetPublishedAt() *time.Time { return v.PublishedAt }
+
+// GetCoverImageOptions returns PublishPostInput.CoverImageOptions, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetCoverImageOptions() *CoverImageOptionsInput { return v.CoverImageOptions }
+
+// GetBannerImageOptions returns PublishPostInput.BannerImageOptions, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetBannerImageOptions() *BannerImageOptionsInput {
+	return v.BannerImageOptions
+}
+
+// GetSlug returns PublishPostInput.Slug, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetSlug() *string { return v.Slug }
+
+// GetOriginalArticleURL returns PublishPostInput.OriginalArticleURL, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetOriginalArticleURL() *string { return v.OriginalArticleURL }
+
+// GetTags returns PublishPostInput.Tags, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetTags() []PublishPostTagInput { return v.Tags }
+
+// GetDisableComments returns PublishPostInput.DisableComments, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetDisableComments() *bool { return v.DisableComments }
+
+// GetMetaTags returns PublishPostInput.MetaTags, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetMetaTags() *MetaTagsInput { return v.MetaTags }
+
+// GetPublishAs returns PublishPostInput.PublishAs, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetPublishAs() *string { return v.PublishAs }
+
+// GetSeriesId returns PublishPostInput.SeriesId, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetSeriesId() *string { return v.SeriesId }
+
+// GetSettings returns PublishPostInput.Settings, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetSettings() *PublishPostSettingsInput { return v.Settings }
+
+// GetCoAuthors returns PublishPostInput.CoAuthors, and is useful for accessing the field via an interface.
+func (v *PublishPostInput) GetCoAuthors() []string { return v.CoAuthors }
+
+// PublishPostPublishPostPublishPostPayload includes the requested fields of the GraphQL type PublishPostPayload.
+type PublishPostPublishPostPublishPostPayload struct {
+	Post *PublishPostPublishPostPublishPostPayloadPost `json:"post"`
+}
+
+// GetPost returns PublishPostPublishPostPublishPostPayload.Post, and is useful for accessing the field via an interface.
+func (v *PublishPostPublishPostPublishPostPayload) GetPost() *PublishPostPublishPostPublishPostPayloadPost {
+	return v.Post
+}
+
+// PublishPostPublishPostPublishPostPayloadPost includes the requested fields of the GraphQL type Post.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the post.
+// A post is a published article on Hashnode.
+type PublishPostPublishPostPublishPostPayloadPost struct {
+	// The ID of the post. Used to uniquely identify the post.
+	Id string `json:"id"`
+	// The slug of the post. Used as address of the post on blog. Example - https://johndoe.com/my-post-slug
+	Slug string `json:"slug"`
+	// Complete URL of the post including the domain name. Example - https://johndoe.com/my-post-slug
+	Url string `json:"url"`
+}
+
+// GetId returns PublishPostPublishPostPublishPostPayloadPost.Id, and is useful for accessing the field via an interface.
+func (v *PublishPostPublishPostPublishPostPayloadPost) GetId() string { return v.Id }
+
+// GetSlug returns PublishPostPublishPostPublishPostPayloadPost.Slug, and is useful for accessing the field via an interface.
+func (v *PublishPostPublishPostPublishPostPayloadPost) GetSlug() string { return v.Slug }
+
+// GetUrl returns PublishPostPublishPostPublishPostPayloadPost.Url, and is useful for accessing the field via an interface.
+func (v *PublishPostPublishPostPublishPostPayloadPost) GetUrl() string { return v.Url }
+
+// PublishPostResponse is returned by PublishPost on success.
+type PublishPostResponse struct {
+	// Creates a new post.
+	PublishPost PublishPostPublishPostPublishPostPayload `json:"publishPost"`
+}
+
+// GetPublishPost returns PublishPostResponse.PublishPost, and is useful for accessing the field via an interface.
+func (v *PublishPostResponse) GetPublishPost() PublishPostPublishPostPublishPostPayload {
+	return v.PublishPost
+}
+
+type PublishPostSettingsInput struct {
+	// A flag to indicate if the post is scheduled.
+	Scheduled *bool `json:"scheduled"`
+	// A flag to indicate if the post contains table of content
+	EnableTableOfContent *bool `json:"enableTableOfContent"`
+	// Flag to indicate if the slug is overridden by the user.
+	SlugOverridden *bool `json:"slugOverridden"`
+	// Whether to send a newsletter for this post.
+	IsNewsletterActivated *bool `json:"isNewsletterActivated"`
+	// A flag to indicate if the post is delisted, used to hide the post from public feed.
+	Delisted *bool `json:"delisted"`
+}
+
+// GetScheduled returns PublishPostSettingsInput.Scheduled, and is useful for accessing the field via an interface.
+func (v *PublishPostSettingsInput) GetScheduled() *bool { return v.Scheduled }
+
+// GetEnableTableOfContent returns PublishPostSettingsInput.EnableTableOfContent, and is useful for accessing the field via an interface.
+func (v *PublishPostSettingsInput) GetEnableTableOfContent() *bool { return v.EnableTableOfContent }
+
+// GetSlugOverridden returns PublishPostSettingsInput.SlugOverridden, and is useful for accessing the field via an interface.
+func (v *PublishPostSettingsInput) GetSlugOverridden() *bool { return v.SlugOverridden }
+
+// GetIsNewsletterActivated returns PublishPostSettingsInput.IsNewsletterActivated, and is useful for accessing the field via an interface.
+func (v *PublishPostSettingsInput) GetIsNewsletterActivated() *bool { return v.IsNewsletterActivated }
+
+// GetDelisted returns PublishPostSettingsInput.Delisted, and is useful for accessing the field via an interface.
+func (v *PublishPostSettingsInput) GetDelisted() *bool { return v.Delisted }
 
 type PublishPostTagInput struct {
 	// A tag id that is referencing an existing tag.
 	//
 	// Either this or name and slug should be provided. If both are provided, the id will be used.
-	Id string `json:"id"`
+	Id *string `json:"id"`
 	// A slug of a new tag to create.
 	//
 	// Either this and name or id should be provided. If both are provided, the id will be used.
-	Slug string `json:"slug"`
+	Slug *string `json:"slug"`
 	// A name of a new tag to create.
 	//
 	// Either this and slug or id should be provided. If both are provided, the id will be used.
-	Name string `json:"name"`
+	Name *string `json:"name"`
 }
 
 // GetId returns PublishPostTagInput.Id, and is useful for accessing the field via an interface.
-func (v *PublishPostTagInput) GetId() string { return v.Id }
+func (v *PublishPostTagInput) GetId() *string { return v.Id }
 
 // GetSlug returns PublishPostTagInput.Slug, and is useful for accessing the field via an interface.
-func (v *PublishPostTagInput) GetSlug() string { return v.Slug }
+func (v *PublishPostTagInput) GetSlug() *string { return v.Slug }
 
 // GetName returns PublishPostTagInput.Name, and is useful for accessing the field via an interface.
-func (v *PublishPostTagInput) GetName() string { return v.Name }
+func (v *PublishPostTagInput) GetName() *string { return v.Name }
+
+// SortOrder is a common enum for all types that can be sorted.
+type SortOrder string
+
+const (
+	SortOrderAsc SortOrder = "asc"
+	SortOrderDsc SortOrder = "dsc"
+)
+
+var AllSortOrder = []SortOrder{
+	SortOrderAsc,
+	SortOrderDsc,
+}
 
 type UpdatePostInput struct {
 	// The id of the post to update.
 	Id string `json:"id"`
 	// The new title of the post
-	Title string `json:"title"`
+	Title *string `json:"title"`
 	// The subtitle of the post
-	Subtitle string `json:"subtitle"`
+	Subtitle *string `json:"subtitle"`
 	// The publication the post is published to.
-	ContentMarkdown string `json:"contentMarkdown"`
+	ContentMarkdown *string `json:"contentMarkdown"`
 	// Backdated publish date.
-	PublishedAt time.Time `json:"publishedAt"`
+	PublishedAt *time.Time `json:"publishedAt"`
 	// Options for the cover image of the post.
-	CoverImageOptions CoverImageOptionsInput `json:"coverImageOptions"`
+	CoverImageOptions *CoverImageOptionsInput `json:"coverImageOptions"`
 	// Options for the banner image of the post.
-	BannerImageOptions BannerImageOptionsInput `json:"bannerImageOptions"`
+	BannerImageOptions *BannerImageOptionsInput `json:"bannerImageOptions"`
 	// Slug of the post. Only if you want to override the slug that will be generated based on the title.
-	Slug string `json:"slug"`
+	Slug *string `json:"slug"`
 	// Canonical URL of the original article.
-	OriginalArticleURL string `json:"originalArticleURL"`
+	OriginalArticleURL *string `json:"originalArticleURL"`
 	// Tags to add to the post. New tags will be created if they don't exist. It overrides the existing tags.
 	Tags []PublishPostTagInput `json:"tags"`
 	// Information about the meta tags added to the post, used for SEO purpose.
-	MetaTags MetaTagsInput `json:"metaTags"`
+	MetaTags *MetaTagsInput `json:"metaTags"`
 	// Set a different author for the post than the requesting user.
 	// Must be a member of the publication.
-	PublishAs string `json:"publishAs"`
+	PublishAs *string `json:"publishAs"`
 	// Update co-authors of the post.
 	// Must be a member of the publication.
 	CoAuthors []string `json:"coAuthors"`
 	// Providing a seriesId will add the post to that series.
 	// Must be a series of the publication.
-	SeriesId string `json:"seriesId"`
+	SeriesId *string `json:"seriesId"`
 	// Whether or not to enable the table of content.
-	Settings UpdatePostSettingsInput `json:"settings"`
+	Settings *UpdatePostSettingsInput `json:"settings"`
 	// If the publication should be changed this is the new Publication ID
-	PublicationId string `json:"publicationId"`
+	PublicationId *string `json:"publicationId"`
 }
 
 // GetId returns UpdatePostInput.Id, and is useful for accessing the field via an interface.
 func (v *UpdatePostInput) GetId() string { return v.Id }
 
 // GetTitle returns UpdatePostInput.Title, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetTitle() string { return v.Title }
+func (v *UpdatePostInput) GetTitle() *string { return v.Title }
 
 // GetSubtitle returns UpdatePostInput.Subtitle, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetSubtitle() string { return v.Subtitle }
+func (v *UpdatePostInput) GetSubtitle() *string { return v.Subtitle }
 
 // GetContentMarkdown returns UpdatePostInput.ContentMarkdown, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetContentMarkdown() string { return v.ContentMarkdown }
+func (v *UpdatePostInput) GetContentMarkdown() *string { return v.ContentMarkdown }
 
 // GetPublishedAt returns UpdatePostInput.PublishedAt, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetPublishedAt() time.Time { return v.PublishedAt }
+func (v *UpdatePostInput) GetPublishedAt() *time.Time { return v.PublishedAt }
 
 // GetCoverImageOptions returns UpdatePostInput.CoverImageOptions, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetCoverImageOptions() CoverImageOptionsInput { return v.CoverImageOptions }
+func (v *UpdatePostInput) GetCoverImageOptions() *CoverImageOptionsInput { return v.CoverImageOptions }
 
 // GetBannerImageOptions returns UpdatePostInput.BannerImageOptions, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetBannerImageOptions() BannerImageOptionsInput {
+func (v *UpdatePostInput) GetBannerImageOptions() *BannerImageOptionsInput {
 	return v.BannerImageOptions
 }
 
 // GetSlug returns UpdatePostInput.Slug, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetSlug() string { return v.Slug }
+func (v *UpdatePostInput) GetSlug() *string { return v.Slug }
 
 // GetOriginalArticleURL returns UpdatePostInput.OriginalArticleURL, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetOriginalArticleURL() string { return v.OriginalArticleURL }
+func (v *UpdatePostInput) GetOriginalArticleURL() *string { return v.OriginalArticleURL }
 
 // GetTags returns UpdatePostInput.Tags, and is useful for accessing the field via an interface.
 func (v *UpdatePostInput) GetTags() []PublishPostTagInput { return v.Tags }
 
 // GetMetaTags returns UpdatePostInput.MetaTags, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetMetaTags() MetaTagsInput { return v.MetaTags }
+func (v *UpdatePostInput) GetMetaTags() *MetaTagsInput { return v.MetaTags }
 
 // GetPublishAs returns UpdatePostInput.PublishAs, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetPublishAs() string { return v.PublishAs }
+func (v *UpdatePostInput) GetPublishAs() *string { return v.PublishAs }
 
 // GetCoAuthors returns UpdatePostInput.CoAuthors, and is useful for accessing the field via an interface.
 func (v *UpdatePostInput) GetCoAuthors() []string { return v.CoAuthors }
 
 // GetSeriesId returns UpdatePostInput.SeriesId, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetSeriesId() string { return v.SeriesId }
+func (v *UpdatePostInput) GetSeriesId() *string { return v.SeriesId }
 
 // GetSettings returns UpdatePostInput.Settings, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetSettings() UpdatePostSettingsInput { return v.Settings }
+func (v *UpdatePostInput) GetSettings() *UpdatePostSettingsInput { return v.Settings }
 
 // GetPublicationId returns UpdatePostInput.PublicationId, and is useful for accessing the field via an interface.
-func (v *UpdatePostInput) GetPublicationId() string { return v.PublicationId }
+func (v *UpdatePostInput) GetPublicationId() *string { return v.PublicationId }
 
 // UpdatePostResponse is returned by UpdatePost on success.
 type UpdatePostResponse struct {
@@ -275,34 +756,36 @@ func (v *UpdatePostResponse) GetUpdatePost() UpdatePostUpdatePostUpdatePostPaylo
 
 type UpdatePostSettingsInput struct {
 	// A flag to indicate if the post contains table of content
-	IsTableOfContentEnabled bool `json:"isTableOfContentEnabled"`
+	IsTableOfContentEnabled *bool `json:"isTableOfContentEnabled"`
 	// A flag to indicate if the post is delisted, used to hide the post from public feed.
-	Delisted bool `json:"delisted"`
+	Delisted *bool `json:"delisted"`
 	// Whether or not comments should be disabled.
-	DisableComments bool `json:"disableComments"`
+	DisableComments *bool `json:"disableComments"`
 	// Pin the post to the blog homepage.
-	PinToBlog bool `json:"pinToBlog"`
+	PinToBlog *bool `json:"pinToBlog"`
 }
 
 // GetIsTableOfContentEnabled returns UpdatePostSettingsInput.IsTableOfContentEnabled, and is useful for accessing the field via an interface.
-func (v *UpdatePostSettingsInput) GetIsTableOfContentEnabled() bool { return v.IsTableOfContentEnabled }
+func (v *UpdatePostSettingsInput) GetIsTableOfContentEnabled() *bool {
+	return v.IsTableOfContentEnabled
+}
 
 // GetDelisted returns UpdatePostSettingsInput.Delisted, and is useful for accessing the field via an interface.
-func (v *UpdatePostSettingsInput) GetDelisted() bool { return v.Delisted }
+func (v *UpdatePostSettingsInput) GetDelisted() *bool { return v.Delisted }
 
 // GetDisableComments returns UpdatePostSettingsInput.DisableComments, and is useful for accessing the field via an interface.
-func (v *UpdatePostSettingsInput) GetDisableComments() bool { return v.DisableComments }
+func (v *UpdatePostSettingsInput) GetDisableComments() *bool { return v.DisableComments }
 
 // GetPinToBlog returns UpdatePostSettingsInput.PinToBlog, and is useful for accessing the field via an interface.
-func (v *UpdatePostSettingsInput) GetPinToBlog() bool { return v.PinToBlog }
+func (v *UpdatePostSettingsInput) GetPinToBlog() *bool { return v.PinToBlog }
 
 // UpdatePostUpdatePostUpdatePostPayload includes the requested fields of the GraphQL type UpdatePostPayload.
 type UpdatePostUpdatePostUpdatePostPayload struct {
-	Post UpdatePostUpdatePostUpdatePostPayloadPost `json:"post"`
+	Post *UpdatePostUpdatePostUpdatePostPayloadPost `json:"post"`
 }
 
 // GetPost returns UpdatePostUpdatePostUpdatePostPayload.Post, and is useful for accessing the field via an interface.
-func (v *UpdatePostUpdatePostUpdatePostPayload) GetPost() UpdatePostUpdatePostUpdatePostPayloadPost {
+func (v *UpdatePostUpdatePostUpdatePostPayload) GetPost() *UpdatePostUpdatePostUpdatePostPayloadPost {
 	return v.Post
 }
 
@@ -317,7 +800,7 @@ type UpdatePostUpdatePostUpdatePostPayloadPost struct {
 	// The slug of the post. Used as address of the post on blog. Example - https://johndoe.com/my-post-slug
 	Slug string `json:"slug"`
 	// The date and time the post was last updated.
-	UpdatedAt time.Time `json:"updatedAt"`
+	UpdatedAt *time.Time `json:"updatedAt"`
 }
 
 // GetId returns UpdatePostUpdatePostUpdatePostPayloadPost.Id, and is useful for accessing the field via an interface.
@@ -327,15 +810,31 @@ func (v *UpdatePostUpdatePostUpdatePostPayloadPost) GetId() string { return v.Id
 func (v *UpdatePostUpdatePostUpdatePostPayloadPost) GetSlug() string { return v.Slug }
 
 // GetUpdatedAt returns UpdatePostUpdatePostUpdatePostPayloadPost.UpdatedAt, and is useful for accessing the field via an interface.
-func (v *UpdatePostUpdatePostUpdatePostPayloadPost) GetUpdatedAt() time.Time { return v.UpdatedAt }
+func (v *UpdatePostUpdatePostUpdatePostPayloadPost) GetUpdatedAt() *time.Time { return v.UpdatedAt }
 
-// __GetPublicationInput is used internally by genqlient
-type __GetPublicationInput struct {
+// __CreateSeriesInput is used internally by genqlient
+type __CreateSeriesInput struct {
+	Input CreateSeriesInput `json:"input"`
+}
+
+// GetInput returns __CreateSeriesInput.Input, and is useful for accessing the field via an interface.
+func (v *__CreateSeriesInput) GetInput() CreateSeriesInput { return v.Input }
+
+// __GetPublicationDataInput is used internally by genqlient
+type __GetPublicationDataInput struct {
 	Id string `json:"id"`
 }
 
-// GetId returns __GetPublicationInput.Id, and is useful for accessing the field via an interface.
-func (v *__GetPublicationInput) GetId() string { return v.Id }
+// GetId returns __GetPublicationDataInput.Id, and is useful for accessing the field via an interface.
+func (v *__GetPublicationDataInput) GetId() string { return v.Id }
+
+// __PublishPostInput is used internally by genqlient
+type __PublishPostInput struct {
+	Input PublishPostInput `json:"input"`
+}
+
+// GetInput returns __PublishPostInput.Input, and is useful for accessing the field via an interface.
+func (v *__PublishPostInput) GetInput() PublishPostInput { return v.Input }
 
 // __UpdatePostInput is used internally by genqlient
 type __UpdatePostInput struct {
@@ -345,16 +844,57 @@ type __UpdatePostInput struct {
 // GetInput returns __UpdatePostInput.Input, and is useful for accessing the field via an interface.
 func (v *__UpdatePostInput) GetInput() UpdatePostInput { return v.Input }
 
-// The query executed by GetPublication.
-const GetPublication_Operation = `
-query GetPublication ($id: ObjectId!) {
-	publication(id: $id) {
-		title
-		posts(first: 20) {
+// The mutation executed by CreateSeries.
+const CreateSeries_Operation = `
+mutation CreateSeries ($input: CreateSeriesInput!) {
+	createSeries(input: $input) {
+		series {
+			id
+			name
+			slug
+		}
+	}
+}
+`
+
+// Create a new series if it doesn't exist locally
+func CreateSeries(
+	ctx_ context.Context,
+	client_ graphql.Client,
+	input CreateSeriesInput,
+) (data_ *CreateSeriesResponse, err_ error) {
+	req_ := &graphql.Request{
+		OpName: "CreateSeries",
+		Query:  CreateSeries_Operation,
+		Variables: &__CreateSeriesInput{
+			Input: input,
+		},
+	}
+
+	data_ = &CreateSeriesResponse{}
+	resp_ := &graphql.Response{Data: data_}
+
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
+	)
+
+	return data_, err_
+}
+
+// The query executed by GetMe.
+const GetMe_Operation = `
+query GetMe {
+	me {
+		id
+		username
+		publications(first: 5) {
 			edges {
 				node {
 					id
 					title
+					url
 				}
 			}
 		}
@@ -362,20 +902,117 @@ query GetPublication ($id: ObjectId!) {
 }
 `
 
-func GetPublication(
+// --- 1. Identity & Discovery (For 'init') ---
+func GetMe(
+	ctx_ context.Context,
+	client_ graphql.Client,
+) (data_ *GetMeResponse, err_ error) {
+	req_ := &graphql.Request{
+		OpName: "GetMe",
+		Query:  GetMe_Operation,
+	}
+
+	data_ = &GetMeResponse{}
+	resp_ := &graphql.Response{Data: data_}
+
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
+	)
+
+	return data_, err_
+}
+
+// The query executed by GetPublicationData.
+const GetPublicationData_Operation = `
+query GetPublicationData ($id: ObjectId!) {
+	publication(id: $id) {
+		title
+		posts(first: 50) {
+			edges {
+				node {
+					id
+					title
+					slug
+					content {
+						markdown
+					}
+					series {
+						id
+						name
+						slug
+					}
+				}
+			}
+		}
+		seriesList(first: 50) {
+			edges {
+				node {
+					id
+					name
+					slug
+				}
+			}
+		}
+	}
+}
+`
+
+// --- 2. Content State (For 'plan') ---
+func GetPublicationData(
 	ctx_ context.Context,
 	client_ graphql.Client,
 	id string,
-) (data_ *GetPublicationResponse, err_ error) {
+) (data_ *GetPublicationDataResponse, err_ error) {
 	req_ := &graphql.Request{
-		OpName: "GetPublication",
-		Query:  GetPublication_Operation,
-		Variables: &__GetPublicationInput{
+		OpName: "GetPublicationData",
+		Query:  GetPublicationData_Operation,
+		Variables: &__GetPublicationDataInput{
 			Id: id,
 		},
 	}
 
-	data_ = &GetPublicationResponse{}
+	data_ = &GetPublicationDataResponse{}
+	resp_ := &graphql.Response{Data: data_}
+
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
+	)
+
+	return data_, err_
+}
+
+// The mutation executed by PublishPost.
+const PublishPost_Operation = `
+mutation PublishPost ($input: PublishPostInput!) {
+	publishPost(input: $input) {
+		post {
+			id
+			slug
+			url
+		}
+	}
+}
+`
+
+// Publish new post (includes seriesId for auto-assignment)
+func PublishPost(
+	ctx_ context.Context,
+	client_ graphql.Client,
+	input PublishPostInput,
+) (data_ *PublishPostResponse, err_ error) {
+	req_ := &graphql.Request{
+		OpName: "PublishPost",
+		Query:  PublishPost_Operation,
+		Variables: &__PublishPostInput{
+			Input: input,
+		},
+	}
+
+	data_ = &PublishPostResponse{}
 	resp_ := &graphql.Response{Data: data_}
 
 	err_ = client_.MakeRequest(
@@ -400,6 +1037,7 @@ mutation UpdatePost ($input: UpdatePostInput!) {
 }
 `
 
+// Update existing post
 func UpdatePost(
 	ctx_ context.Context,
 	client_ graphql.Client,

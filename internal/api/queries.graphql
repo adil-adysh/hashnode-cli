@@ -1,25 +1,68 @@
-# internal/api/queries.graphql
-
-mutation UpdatePost($input: UpdatePostInput!) {
-  updatePost(input: $input) {
-    post {
-      id
-      slug
-      updatedAt
-    }
-  }
-}
-
-query GetPublication($id: ObjectId!) {
-  publication(id: $id) {
-    title
-    posts(first: 20) {
+# --- 1. Identity & Discovery (For 'init') ---
+query GetMe {
+  me {
+    id
+    username
+    publications(first: 5) {
       edges {
         node {
           id
           title
+          url
         }
       }
     }
+  }
+}
+
+# --- 2. Content State (For 'plan') ---
+query GetPublicationData($id: ObjectId!) {
+  publication(id: $id) {
+    title
+    # Fetch Posts to compare checksums
+    posts(first: 50) {
+      edges {
+        node {
+          id
+          title
+          slug
+          content { markdown }
+          series { id name slug } # Get current series assignment
+        }
+      }
+    }
+    # Fetch Series to map local 'series name' to remote 'ID'
+    seriesList(first: 50) {
+      edges {
+        node {
+          id
+          name
+          slug
+        }
+      }
+    }
+  }
+}
+
+# --- 3. Mutations (For 'apply') ---
+
+# Publish new post (includes seriesId for auto-assignment)
+mutation PublishPost($input: PublishPostInput!) {
+  publishPost(input: $input) {
+    post { id slug url }
+  }
+}
+
+# Update existing post
+mutation UpdatePost($input: UpdatePostInput!) {
+  updatePost(input: $input) {
+    post { id slug updatedAt }
+  }
+}
+
+# Create a new series if it doesn't exist locally
+mutation CreateSeries($input: CreateSeriesInput!) {
+  createSeries(input: $input) {
+    series { id name slug }
   }
 }

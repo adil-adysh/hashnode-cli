@@ -3,8 +3,7 @@ operations:
   - internal/api/queries.graphql
 generated: internal/api/generated.go
 package: api
-
-# 👇 This is the section you are missing
+optional: pointer # 👈 CRITICAL: Prevents overwriting series/tags with empty values
 bindings:
   DateTime:
     type: time.Time
@@ -12,9 +11,3 @@ bindings:
     type: string
   URL:
     type: string
-  Decimal:
-    type: float64
-  JSON:
-    type: map[string]interface{}
-  JSONObject:
-    type: map[string]interface{}
