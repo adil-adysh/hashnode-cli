@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"adil-adysh/hashnode-cli/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,13 +17,12 @@ type PostState struct {
 	RemoteURL    string `yaml:"remoteUrl"`    // For user convenience
 }
 
-const StateDir = ".hashnode"
-
+// StateDir is defined in consts.go
 // EnsureStateDir creates the hidden folder if it doesn't exist
 func EnsureStateDir() error {
 	dir := StatePath()
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
+		return os.MkdirAll(dir, DirPerm)
 	}
 	return nil
 }
@@ -56,7 +56,7 @@ func LoadState() (map[string]PostState, error) {
 		var s PostState
 		if err := yaml.Unmarshal(data, &s); err != nil {
 			// Don't crash, just warn (in a real app)
-			fmt.Printf("⚠️ Warning: Corrupt state file %s\n", f.Name())
+			log.Warnf("⚠️ Warning: Corrupt state file %s\n", f.Name())
 			continue
 		}
 
@@ -82,5 +82,5 @@ func SaveState(s PostState) error {
 	filename := fmt.Sprintf("%s.yml", s.Slug)
 	path := StatePath(filename)
 
-	return os.WriteFile(path, data, 0644)
+	return AtomicWriteFile(path, data, FilePerm)
 }

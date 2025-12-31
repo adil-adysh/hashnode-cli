@@ -90,11 +90,11 @@ var importCmd = &cobra.Command{
 				return fmt.Errorf("failed to generate filename for %s: %w", title, err)
 			}
 			// Ensure directory exists
-			if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(path)), 0755); err != nil {
-				return fmt.Errorf("failed to create dirs for %s: %w", path, err)
+			if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(path)), state.DirPerm); err != nil {
+				return fmt.Errorf("failed to write file: %w", err)
 			}
-			if err := os.WriteFile(filepath.FromSlash(path), []byte(markdown), 0644); err != nil {
-				return fmt.Errorf("failed to write %s: %w", path, err)
+			if err := os.WriteFile(filepath.FromSlash(path), []byte(markdown), state.FilePerm); err != nil {
+				return fmt.Errorf("failed to write file: %w", err)
 			}
 
 			checksum := state.ChecksumFromContent([]byte(markdown))
@@ -123,7 +123,7 @@ var importCmd = &cobra.Command{
 			}
 			articles = append(articles, entry)
 			sum.SetArticle(path, p.Id, checksum)
-			fmt.Printf("Imported %s -> %s\n", path, p.Id)
+			output.Info("Imported %s -> %s\n", path, p.Id)
 		}
 
 		// Save article registry and sum
@@ -157,11 +157,11 @@ var importCmd = &cobra.Command{
 			}
 			sType, localCS, remoteCS, serr := state.ComputeArticleState(a)
 			if serr != nil {
-				fmt.Printf("ℹ️  could not compute staged state for %s: %v\n", a.MarkdownPath, serr)
+				output.Info("ℹ️  could not compute staged state for %s: %v\n", a.MarkdownPath, serr)
 				continue
 			}
 			if err := state.SetStagedEntry(a.MarkdownPath, a.RemotePostID, sType, localCS, remoteCS); err != nil {
-				fmt.Printf("ℹ️  could not persist staged entry for %s: %v\n", a.MarkdownPath, err)
+				output.Info("ℹ️  could not persist staged entry for %s: %v\n", a.MarkdownPath, err)
 			}
 		}
 		if err := state.SaveStage(st); err != nil {

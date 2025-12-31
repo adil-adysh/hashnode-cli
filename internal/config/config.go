@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+	"adil-adysh/hashnode-cli/internal/state"
 )
 
 type Publication struct {
@@ -47,7 +48,7 @@ func Load() (*Config, error) {
 // Save writes the config to disk with restricted permissions
 func (c *Config) Save() error {
 	dir := configDir()
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, state.SecureDirPerm); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(c)

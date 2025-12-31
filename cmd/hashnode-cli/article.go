@@ -35,8 +35,11 @@ var articleCreateCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to load article registry: %v\n", err)
 			os.Exit(1)
-		}
+			// Prepare content
+			content := []byte(fmt.Sprintf("# %s\n\nWrite your article here.\n", name))
 
+		}
+				output.Error("❌ Failed to write markdown file: %v\n", err)
 		// Idempotent by title
 		for _, a := range list {
 			if a.Title == name {
@@ -61,7 +64,7 @@ var articleCreateCmd = &cobra.Command{
 		// Prepare content
 		content := []byte(fmt.Sprintf("# %s\n\nWrite your article here.\n", name))
 
-		if err := os.WriteFile(mdPath, content, 0644); err != nil {
+			output.Success("Registered article '%s' -> %s\n", name, rel)
 			fmt.Fprintf(os.Stderr, "❌ Failed to write markdown file: %v\n", err)
 			os.Exit(1)
 		}

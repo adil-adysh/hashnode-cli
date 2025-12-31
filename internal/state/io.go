@@ -42,5 +42,19 @@ func WriteYAML(path string, v interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal %s: %w", path, err)
 	}
-	return os.WriteFile(path, data, 0644)
+	return AtomicWriteFile(path, data, FilePerm)
+}
+
+// AtomicWriteFile writes the provided data to a temp file in the same
+// directory and renames it into place. This ensures atomic replacement.
+func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, DirPerm); err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, ".tmp-write-"+filepath.Base(path))
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

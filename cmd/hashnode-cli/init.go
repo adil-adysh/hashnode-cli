@@ -14,6 +14,7 @@ import (
 
 	// Update this import path to match your go.mod module name
 	"adil-adysh/hashnode-cli/internal/api"
+	"adil-adysh/hashnode-cli/internal/cli/output"
 	"adil-adysh/hashnode-cli/internal/config"
 	"adil-adysh/hashnode-cli/internal/state"
 )
@@ -60,7 +61,7 @@ var initCmd = &cobra.Command{
 		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
 
 		// 3. Verify Token via API
-		fmt.Println("⏳ Verifying token and fetching user details...")
+		output.Info("⏳ Verifying token and fetching user details...\n")
 
 		resp, err := api.GetMe(context.Background(), client)
 		if err != nil {
@@ -75,7 +76,7 @@ var initCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Printf("✅ Authenticated as: @%s\n", user.Username)
+		output.Success("✅ Authenticated as: @%s\n", user.Username)
 
 		// 4. Let user select a single publication (one blog per repo)
 		pubs := user.Publications.Edges
@@ -84,14 +85,14 @@ var initCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Println("\nYour Publications:")
+		output.Info("\nYour Publications:\n")
 		for i, edge := range pubs {
-			fmt.Printf("  [%d] %s (ID: %s)\n", i+1, edge.Node.Title, edge.Node.Id)
+			output.Info("  [%d] %s (ID: %s)\n", i+1, edge.Node.Title, edge.Node.Id)
 		}
 
 		var selected int
 		for {
-			fmt.Printf("Select a publication [1-%d]: ", len(pubs))
+			output.Info("Select a publication [1-%d]: ", len(pubs))
 			input, _ := reader.ReadString('\n')
 			input = strings.TrimSpace(input)
 			n, err := fmt.Sscanf(input, "%d", &selected)
@@ -102,21 +103,21 @@ var initCmd = &cobra.Command{
 		}
 
 		pubNode := pubs[selected-1].Node
-		fmt.Printf("📂 Selected Publication: '%s' (ID: %s)\n", pubNode.Title, pubNode.Id)
+		output.Info("📂 Selected Publication: '%s' (ID: %s)\n", pubNode.Title, pubNode.Id)
 
 		// 5. Ensure repo-level .hashnode state directory and blog.yml
 		if err := state.EnsureStateDir(); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to create state dir: %v\n", err)
+			output.Error("❌ Failed to create state dir: %v\n", err)
 			os.Exit(1)
 		}
 
 		blogPath := state.StatePath("blog.yml")
 
 		if _, err := os.Stat(blogPath); err == nil {
-			fmt.Fprintf(os.Stderr, "❌ Repository already initialized: %s exists\n", blogPath)
+			output.Error("❌ Repository already initialized: %s exists\n", blogPath)
 			os.Exit(1)
 		} else if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "❌ Failed to check state: %v\n", err)
+			output.Error("❌ Failed to check state: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -135,24 +136,24 @@ var initCmd = &cobra.Command{
 
 		data, err := yaml.Marshal(blog)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to marshal blog state: %v\n", err)
+			output.Error("❌ Failed to marshal blog state: %v\n", err)
 			os.Exit(1)
 		}
 
-		if err := os.WriteFile(blogPath, data, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to write %s: %v\n", blogPath, err)
+		if err := os.WriteFile(blogPath, data, state.FilePerm); err != nil {
+			output.Error("❌ Failed to write %s: %v\n", blogPath, err)
 			os.Exit(1)
 		}
 
 		// 6. Save token to user config (home) for subsequent API calls (non-authoritative)
 		cfg := config.Config{Publications: nil, Token: token}
 		if err := cfg.Save(); err != nil {
-			fmt.Printf("⚠️  Failed to write home config: %v\n", err)
+			output.Error("⚠️  Failed to write home config: %v\n", err)
 		}
 
-		fmt.Println("\n🎉 Success! repository initialized for a single Hashnode publication.")
-		fmt.Printf("   State written to: %s\n", blogPath)
-		fmt.Println("   ⚠️  WARNING: files under .hashnode/ are CLI-owned; do not edit them by hand.")
+		output.Success("\n🎉 Success! repository initialized for a single Hashnode publication.\n")
+		output.Info("   State written to: %s\n", blogPath)
+		output.Info("   ⚠️  WARNING: files under .hashnode/ are CLI-owned; do not edit them by hand.\n")
 	},
 }
 

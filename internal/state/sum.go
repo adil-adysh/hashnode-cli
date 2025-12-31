@@ -26,7 +26,7 @@ type ArticleSum struct {
 	Checksum string
 }
 
-const SumFile = "hashnode.sum"
+// SumFile is defined in consts.go
 
 // LoadSum parses hashnode.sum in repo root. Returns os.ErrNotExist if missing.
 func LoadSum() (*Sum, error) {
@@ -135,23 +135,18 @@ func SaveSum(s *Sum) error {
 	}
 
 	// Write file
+	// Build file contents
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(l)
+		b.WriteString("\n")
+	}
 	root, err := ProjectRoot()
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(root, SumFile+".tmp")
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	for _, l := range lines {
-		if _, err := f.WriteString(l + "\n"); err != nil {
-			f.Close()
-			return err
-		}
-	}
-	f.Close()
-	return os.Rename(tmp, filepath.Join(root, SumFile))
+	path := filepath.Join(root, SumFile)
+	return AtomicWriteFile(path, []byte(b.String()), FilePerm)
 }
 
 // NewSumFromBlog attempts to construct a Sum with Blog info from .hashnode/blog.yml

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"adil-adysh/hashnode-cli/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,7 +42,7 @@ func LoadIdentities() (map[string]RemoteIdentity, error) {
 
 		var id RemoteIdentity
 		if err := yaml.Unmarshal(data, &id); err != nil {
-			fmt.Printf("⚠️  Corrupt state file ignored: %s\n", e.Name())
+			log.Warnf("⚠️  Corrupt state file ignored: %s\n", e.Name())
 			continue
 		}
 
@@ -63,5 +64,5 @@ func SaveIdentity(id RemoteIdentity) error {
 	}
 
 	filename := fmt.Sprintf("%s.yml", id.Slug)
-	return os.WriteFile(StatePath(filename), data, 0644)
+	return AtomicWriteFile(StatePath(filename), data, FilePerm)
 }

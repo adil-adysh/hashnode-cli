@@ -3,7 +3,6 @@ package state
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -42,7 +41,7 @@ type LockData struct {
 }
 
 func lockPath() string {
-	return filepath.Join(ProjectRootOrCwd(), StateDir, LockFile)
+	return StatePath(LockFile)
 }
 
 // LoadLock reads the lock file if present or returns an empty LockData
@@ -68,8 +67,7 @@ func LoadLock() (*LockData, error) {
 // SaveLock writes the lock data deterministically (overwrites existing lock)
 func SaveLock(l *LockData) error {
 	// ensure state dir exists
-	dir := filepath.Join(ProjectRootOrCwd(), StateDir)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := EnsureStateDir(); err != nil {
 		return fmt.Errorf("failed to ensure state dir: %w", err)
 	}
 	// ensure nested map
@@ -84,7 +82,7 @@ func SaveLock(l *LockData) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal lock: %w", err)
 	}
-	return os.WriteFile(lockPath(), data, 0644)
+	return AtomicWriteFile(lockPath(), data, FilePerm)
 }
 
 // ComputeArticleState computes the semantic state for an article given known metadata.

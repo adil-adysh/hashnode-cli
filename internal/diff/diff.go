@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"adil-adysh/hashnode-cli/internal/log"
 	"adil-adysh/hashnode-cli/internal/state"
 	"fmt"
 	"os"
@@ -111,20 +112,20 @@ func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 
 // PrintPlanSummary prints a summary of the plan to the terminal
 func PrintPlanSummary(plan []PlanItem) {
-	fmt.Printf("📝 Execution Plan: %d changes detected\n", countNonSkip(plan))
-	fmt.Println("---------------------------------------------------")
+		log.Printf("📝 Execution Plan: %d changes detected\n", countNonSkip(plan))
+	log.Println("---------------------------------------------------")
 	for _, item := range plan {
 		switch item.Type {
 		case ActionCreate:
-			fmt.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+				log.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionUpdate:
-			fmt.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+				log.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionDelete:
-			fmt.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+				log.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		}
 	}
-	fmt.Println("---------------------------------------------------")
-	fmt.Println("Run 'hashnode apply' to execute these changes.")
+	log.Println("---------------------------------------------------")
+	log.Println("Run 'hashnode apply' to execute these changes.")
 }
 
 func countNonSkip(plan []PlanItem) int {

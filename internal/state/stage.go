@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const StageFilename = "hashnode.stage"
+// StageFilename is defined in consts.go
 
 // Stage represents the declarative staging area (no runtime metadata)
 type Stage struct {
@@ -22,7 +22,7 @@ type Stage struct {
 
 // stagePath returns the project-root path to hashnode.stage
 func stagePath() string {
-	return filepath.Join(ProjectRootOrCwd(), StateDir, StageFilename)
+	return StatePath(StageFilename)
 }
 
 // NormalizePath returns a repository-relative, forward-slash prefixed path
@@ -74,9 +74,7 @@ func LoadStage() (*Stage, error) {
 
 // SaveStage writes the stage file deterministically
 func SaveStage(s *Stage) error {
-	// ensure state dir exists at project root (fallbacks to cwd)
-	dir := filepath.Join(ProjectRootOrCwd(), StateDir)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := EnsureStateDir(); err != nil {
 		return fmt.Errorf("failed to ensure state dir: %w", err)
 	}
 	// normalize and sort entries for determinism
@@ -107,7 +105,7 @@ func SaveStage(s *Stage) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal stage: %w", err)
 	}
-	return os.WriteFile(stagePath(), data, 0644)
+	return AtomicWriteFile(stagePath(), data, FilePerm)
 }
 
 // IsIncluded reports whether path is explicitly included in the stage

@@ -24,10 +24,10 @@ type ArticleEntry struct {
 	LastSyncedAt string `yaml:"last_synced_at,omitempty"`
 }
 
-const articlesFile = "article.yml"
+// ArticlesFile is defined in consts.go
 
 func articlesPath() string {
-	return StatePath(articlesFile)
+	return StatePath(ArticlesFile)
 }
 
 // LoadArticles reads the article registry. Returns empty slice if file doesn't exist.

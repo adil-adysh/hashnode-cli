@@ -15,12 +15,11 @@ type SeriesEntry struct {
 	Description string `yaml:"description"`
 }
 
-// seriesFile is the repo-local registry file under .hashnode/
-const seriesFile = "series.yml"
+// SeriesFile is defined in consts.go
 
 // seriesPath returns the path to .hashnode/series.yml in the current working directory
 func seriesPath() string {
-	return StatePath(seriesFile)
+	return StatePath(SeriesFile)
 }
 
 // LoadSeries reads the series registry. Returns empty slice if file doesn't exist.
