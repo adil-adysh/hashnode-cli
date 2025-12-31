@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v3"
+	"adil-adysh/hashnode-cli/internal/log"
 	"adil-adysh/hashnode-cli/internal/state"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Publication struct {
@@ -23,7 +25,11 @@ type Config struct {
 func configDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		panic("Unable to determine user home directory")
+		// Best-effort fallback: prefer explicit user home, but if it can't
+		// be determined (rare in CI or constrained environments) fall back
+		// to the current directory and emit a warning.
+		log.Warnf("unable to determine user home dir, using cwd: %v\n", err)
+		return "."
 	}
 	return filepath.Join(home, ".hashnode-cli")
 }

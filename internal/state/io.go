@@ -33,6 +33,20 @@ func ReadYAML(path string, out interface{}) error {
 	return nil
 }
 
+// LoadYAMLOrEmpty behaves like ReadYAML but treats missing files as an
+// empty value for `out`. This simplifies callers that want to treat absent
+// registry files as empty lists/maps instead of errors.
+func LoadYAMLOrEmpty(path string, out interface{}) error {
+	if err := ReadYAML(path, out); err != nil {
+		if os.IsNotExist(err) {
+			// Intentionally return nil so callers get the zero-value in `out`.
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // WriteYAML marshals v and writes it to path, ensuring the state dir exists.
 func WriteYAML(path string, v interface{}) error {
 	if err := EnsureStateDir(); err != nil {
@@ -52,9 +66,12 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(dir, DirPerm); err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, ".tmp-write-"+filepath.Base(path))
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	// Use a deterministic temp filename in the same directory to ensure the
+	// rename is atomic on the same filesystem. Keep the name short so it's
+	// easy to spot during debugging.
+	tmpPath := filepath.Join(dir, ".tmp-"+filepath.Base(path))
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return os.Rename(tmpPath, path)
 }

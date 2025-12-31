@@ -1,7 +1,7 @@
 package state
 
+"fmt"
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,22 +52,22 @@ func getCwdOrDot() string {
 // LoadStage reads hashnode.stage; if missing, returns an empty Stage (version 1)
 func LoadStage() (*Stage, error) {
 	path := stagePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Stage{Version: 1, Include: []string{}, Exclude: []string{}, Staged: map[string]StagedArticle{}}, nil
-		}
-		return nil, fmt.Errorf("failed to read %s: %w", path, err)
-	}
 	var s Stage
-	if err := yaml.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("invalid yaml %s: %w", path, err)
+	// Treat missing stage file as empty/default stage to simplify callers.
+	if err := LoadYAMLOrEmpty(path, &s); err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
 	}
 	if s.Version == 0 {
 		s.Version = 1
 	}
 	if s.Staged == nil {
 		s.Staged = map[string]StagedArticle{}
+	}
+	if s.Include == nil {
+		s.Include = []string{}
+	}
+	if s.Exclude == nil {
+		s.Exclude = []string{}
 	}
 	return &s, nil
 }
@@ -161,29 +161,29 @@ func inRepo(abs string) bool {
 // StageFile stages a single file. It fails if the file is not tracked.
 func StageFile(path string) error {
 	// ensure exists and is file
-	info, err := os.Stat(path)
+	fi, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("path does not exist: %w", err)
 	}
-	if info.IsDir() {
+	if fi.IsDir() {
 		return fmt.Errorf("path is a directory")
 	}
 
-	abs, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
-	if !inRepo(abs) {
+	if !inRepo(absPath) {
 		return fmt.Errorf("path is outside repository: %s", path)
 	}
 
 	// load registry to check tracked
-	arts, err := LoadArticles()
+	articles, err := LoadArticles()
 	if err != nil {
 		return fmt.Errorf("failed to load article registry: %w", err)
 	}
 	tracked := make(map[string]struct{})
-	for _, a := range arts {
+	for _, a := range articles {
 		tracked[NormalizePath(a.MarkdownPath)] = struct{}{}
 	}
 
@@ -192,60 +192,59 @@ func StageFile(path string) error {
 		return fmt.Errorf("file is not tracked; cannot stage: %s", path)
 	}
 
-	st, err := LoadStage()
+	stage, err := LoadStage()
 	if err != nil {
 		return err
 	}
-	// remove from exclude
+	// remove from exclude and add to include
 	var newEx []string
-	for _, e := range st.Exclude {
+	for _, e := range stage.Exclude {
 		if e == np {
 			continue
 		}
 		newEx = append(newEx, e)
 	}
-	st.Exclude = newEx
-	st.Include = append(st.Include, np)
+	stage.Exclude = newEx
+	stage.Include = append(stage.Include, np)
 
-	// persist stage file
-	if err := SaveStage(st); err != nil {
+	// persist stage file early so subsequent computations see the updated include
+	if err := SaveStage(stage); err != nil {
 		return err
 	}
 
-	// compute staged article state and save to lock
-	// build merged entry from sum + registry like plan
-	mergedMap := map[string]ArticleEntry{}
+	// build merged lookup from sum + registry (like plan generation)
+	mergedEntries := map[string]ArticleEntry{}
 	sum, _ := LoadSum()
-	reg, _ := LoadArticles()
-	regMap := make(map[string]ArticleEntry)
-	for _, a := range reg {
-		regMap[a.MarkdownPath] = a
+	registry, _ := LoadArticles()
+	registryMap := make(map[string]ArticleEntry)
+	for _, a := range registry {
+		registryMap[a.MarkdownPath] = a
 	}
 	if sum != nil {
 		if err := sum.ValidateAgainstBlog(); err == nil {
 			for path, sa := range sum.Articles {
-				entry := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-				if r, ok := regMap[path]; ok {
-					entry.Title = r.Title
-					entry.LocalID = r.LocalID
-					entry.SeriesID = r.SeriesID
-					entry.LastSyncedAt = r.LastSyncedAt
+				ent := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
+				if r, ok := registryMap[path]; ok {
+					ent.Title = r.Title
+					ent.LocalID = r.LocalID
+					ent.SeriesID = r.SeriesID
+					ent.LastSyncedAt = r.LastSyncedAt
 				}
-				mergedMap[path] = entry
-				delete(regMap, path)
+				mergedEntries[path] = ent
+				delete(registryMap, path)
 			}
-			for _, rem := range regMap {
-				mergedMap[rem.MarkdownPath] = rem
+			for _, rem := range registryMap {
+				mergedEntries[rem.MarkdownPath] = rem
 			}
 		}
 	}
-	if len(mergedMap) == 0 {
-		for _, r := range reg {
-			mergedMap[r.MarkdownPath] = r
+	if len(mergedEntries) == 0 {
+		for _, r := range registry {
+			mergedEntries[r.MarkdownPath] = r
 		}
 	}
 
-	entry, ok := mergedMap[np]
+	entry, ok := mergedEntries[np]
 	if !ok {
 		// not tracked; should not happen because we checked earlier
 		return fmt.Errorf("file is not tracked; cannot stage: %s", path)
@@ -257,10 +256,10 @@ func StageFile(path string) error {
 	}
 
 	// persist staged state into the stage file
-	if st.Staged == nil {
-		st.Staged = map[string]StagedArticle{}
+	if stage.Staged == nil {
+		stage.Staged = map[string]StagedArticle{}
 	}
-	st.Staged[np] = StagedArticle{
+	stage.Staged[np] = StagedArticle{
 		ID:    entry.RemotePostID,
 		State: stateType,
 		Checksum: checksumPair{
@@ -268,7 +267,7 @@ func StageFile(path string) error {
 			Remote: remoteCS,
 		},
 	}
-	if err := SaveStage(st); err != nil {
+	if err := SaveStage(stage); err != nil {
 		return err
 	}
 	return nil
@@ -294,17 +293,17 @@ func StageDir(dir string) ([]string, []string, error) {
 	}
 
 	// load registry and stage
-	arts, err := LoadArticles()
+	articles, err := LoadArticles()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load article registry: %w", err)
 	}
-	st, err := LoadStage()
+	stage, err := LoadStage()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	tracked := make(map[string]struct{})
-	for _, a := range arts {
+	for _, a := range articles {
 		tracked[NormalizePath(a.MarkdownPath)] = struct{}{}
 	}
 
@@ -321,13 +320,13 @@ func StageDir(dir string) ([]string, []string, error) {
 		}
 		np := NormalizePath(p)
 		// if explicitly excluded, skip
-		if st.IsExcluded(np) {
+		if stage.IsExcluded(np) {
 			skipped = append(skipped, np)
 			return nil
 		}
 		// if tracked, stage
 		if _, ok := tracked[np]; ok {
-			st.Include = append(st.Include, np)
+			stage.Include = append(stage.Include, np)
 			staged = append(staged, np)
 			return nil
 		}
@@ -340,7 +339,7 @@ func StageDir(dir string) ([]string, []string, error) {
 	}
 
 	// persist stage deterministically
-	if err := SaveStage(st); err != nil {
+	if err := SaveStage(stage); err != nil {
 		return nil, nil, err
 	}
 
@@ -348,32 +347,32 @@ func StageDir(dir string) ([]string, []string, error) {
 	// (persisted per-article state stored in Stage.Staged)
 
 	// build merged map like StageFile
-	regMap := make(map[string]ArticleEntry)
-	for _, a := range arts {
-		regMap[a.MarkdownPath] = a
+	registryMap := make(map[string]ArticleEntry)
+	for _, a := range articles {
+		registryMap[a.MarkdownPath] = a
 	}
 	sum, _ := LoadSum()
 	mergedMap := map[string]ArticleEntry{}
 	if sum != nil {
 		if err := sum.ValidateAgainstBlog(); err == nil {
 			for path, sa := range sum.Articles {
-				entry := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-				if r, ok := regMap[path]; ok {
-					entry.Title = r.Title
-					entry.LocalID = r.LocalID
-					entry.SeriesID = r.SeriesID
-					entry.LastSyncedAt = r.LastSyncedAt
+				e := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
+				if r, ok := registryMap[path]; ok {
+					e.Title = r.Title
+					e.LocalID = r.LocalID
+					e.SeriesID = r.SeriesID
+					e.LastSyncedAt = r.LastSyncedAt
 				}
-				mergedMap[path] = entry
-				delete(regMap, path)
+				mergedMap[path] = e
+				delete(registryMap, path)
 			}
-			for _, rem := range regMap {
+			for _, rem := range registryMap {
 				mergedMap[rem.MarkdownPath] = rem
 			}
 		}
 	}
 	if len(mergedMap) == 0 {
-		for _, r := range arts {
+		for _, r := range articles {
 			mergedMap[r.MarkdownPath] = r
 		}
 	}
@@ -385,7 +384,7 @@ func StageDir(dir string) ([]string, []string, error) {
 				// skip computing this one but continue
 				continue
 			}
-			st.Staged[p] = StagedArticle{
+			stage.Staged[p] = StagedArticle{
 				ID:    entry.RemotePostID,
 				State: s,
 				Checksum: checksumPair{
@@ -395,7 +394,7 @@ func StageDir(dir string) ([]string, []string, error) {
 			}
 		}
 	}
-	if err := SaveStage(st); err != nil {
+	if err := SaveStage(stage); err != nil {
 		return nil, nil, err
 	}
 

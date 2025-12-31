@@ -30,70 +30,71 @@ type ArticleSum struct {
 
 // LoadSum parses hashnode.sum in repo root. Returns os.ErrNotExist if missing.
 func LoadSum() (*Sum, error) {
-	root, err := ProjectRoot()
+	repoRoot, err := ProjectRoot()
 	if err != nil {
 		return nil, err
 	}
-	fpath := filepath.Join(root, SumFile)
-	f, err := os.Open(fpath)
+	sumPath := filepath.Join(repoRoot, SumFile)
+	file, err := os.Open(sumPath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer file.Close()
 
-	s := &Sum{Series: make(map[string]SeriesEntry), Articles: make(map[string]ArticleSum)}
-	scanner := bufio.NewScanner(f)
+	// Build an empty Sum with maps preallocated for deterministic behavior.
+	sum := &Sum{Series: make(map[string]SeriesEntry), Articles: make(map[string]ArticleSum)}
+	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
 			continue
 		}
-		switch parts[0] {
+		switch fields[0] {
 		case "blog":
 			// blog <slug> id=<id>
-			if len(parts) < 3 {
+			if len(fields) < 3 {
 				return nil, fmt.Errorf("invalid blog line: %s", line)
 			}
-			slug := parts[1]
-			id := parseKeyVal(parts[2], "id")
-			s.Blog = BlogEntry{PublicationID: id, PublicationSlug: slug}
+			slug := fields[1]
+			id := parseKeyVal(fields[2], "id")
+			sum.Blog = BlogEntry{PublicationID: id, PublicationSlug: slug}
 		case "series":
 			// series <name> id=<id>
-			if len(parts) < 3 {
+			if len(fields) < 3 {
 				return nil, fmt.Errorf("invalid series line: %s", line)
 			}
-			name := parts[1]
-			id := parseKeyVal(parts[2], "id")
+			name := fields[1]
+			id := parseKeyVal(fields[2], "id")
 			slug := SeriesSlug(name)
-			s.Series[slug] = SeriesEntry{SeriesID: id, Name: name, Slug: slug}
+			sum.Series[slug] = SeriesEntry{SeriesID: id, Name: name, Slug: slug}
 		case "article":
 			// article <path> id=<id> checksum=sha256:<hex>
-			if len(parts) < 3 {
+			if len(fields) < 3 {
 				return nil, fmt.Errorf("invalid article line: %s", line)
 			}
-			path := parts[1]
+			path := fields[1]
 			var id, checksum string
-			for _, p := range parts[2:] {
-				if strings.HasPrefix(p, "id=") {
-					id = parseKeyVal(p, "id")
+			for _, token := range fields[2:] {
+				if strings.HasPrefix(token, "id=") {
+					id = parseKeyVal(token, "id")
 				}
-				if strings.HasPrefix(p, "checksum=") {
-					checksum = parseKeyVal(p, "checksum")
+				if strings.HasPrefix(token, "checksum=") {
+					checksum = parseKeyVal(token, "checksum")
 				}
 			}
-			s.Articles[path] = ArticleSum{PostID: id, Checksum: checksum}
+			sum.Articles[path] = ArticleSum{PostID: id, Checksum: checksum}
 		default:
-			// ignore unknown lines
+			// ignore unknown lines to remain forward compatible
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return s, nil
+	return sum, nil
 }
 
 func parseKeyVal(token, key string) string {
@@ -136,17 +137,17 @@ func SaveSum(s *Sum) error {
 
 	// Write file
 	// Build file contents
-	var b strings.Builder
+	var sb strings.Builder
 	for _, l := range lines {
-		b.WriteString(l)
-		b.WriteString("\n")
+		sb.WriteString(l)
+		sb.WriteString("\n")
 	}
-	root, err := ProjectRoot()
+	repoRoot, err := ProjectRoot()
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(root, SumFile)
-	return AtomicWriteFile(path, []byte(b.String()), FilePerm)
+	sumPath := filepath.Join(repoRoot, SumFile)
+	return AtomicWriteFile(sumPath, []byte(sb.String()), FilePerm)
 }
 
 // NewSumFromBlog attempts to construct a Sum with Blog info from .hashnode/blog.yml
@@ -155,7 +156,8 @@ func NewSumFromBlog() (*Sum, error) {
 		PublicationID   string `yaml:"publication_id"`
 		PublicationSlug string `yaml:"publication_slug"`
 	}
-	if err := ReadYAML(StatePath("blog.yml"), &blog); err != nil {
+	blogPath := StatePath("blog.yml")
+	if err := ReadYAML(blogPath, &blog); err != nil {
 		return nil, err
 	}
 	return &Sum{

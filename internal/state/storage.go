@@ -6,19 +6,24 @@ import (
 	"path/filepath"
 
 	"adil-adysh/hashnode-cli/internal/log"
+
 	"gopkg.in/yaml.v3"
 )
 
 // RemoteIdentity tracks the connection between local file and remote API
+// RemoteIdentity represents the minimal persisted identity linking a local
+// article to a remote Hashnode post. Kept minimal so the registry is
+// easy to audit by hand.
 type RemoteIdentity struct {
 	ID           string `yaml:"id"`           // The Hashnode Post ID
-	Slug         string `yaml:"slug"`         // The Slug
-	LastChecksum string `yaml:"lastChecksum"` // Hash when we last synced successfully
+	Slug         string `yaml:"slug"`         // The slug used in filenames
+	LastChecksum string `yaml:"lastChecksum"` // Hash when last synced successfully
 }
 
 // LoadIdentities reads all .yml files in .hnsync/
 func LoadIdentities() (map[string]RemoteIdentity, error) {
-	identities := make(map[string]RemoteIdentity)
+	// `idents` clarifies this is an in-memory lookup of identities keyed by slug.
+	idents := make(map[string]RemoteIdentity)
 
 	if err := EnsureStateDir(); err != nil {
 		return nil, err
@@ -29,30 +34,33 @@ func LoadIdentities() (map[string]RemoteIdentity, error) {
 		return nil, err
 	}
 
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) != ".yml" {
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) != StateFileExt {
 			continue
 		}
 
-		path := filepath.Join(dir, e.Name())
+		path := filepath.Join(dir, entry.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read state %s: %w", e.Name(), err)
-		}
-
-		var id RemoteIdentity
-		if err := yaml.Unmarshal(data, &id); err != nil {
-			log.Warnf("⚠️  Corrupt state file ignored: %s\n", e.Name())
+			// Read failure for a single file should not abort the entire load.
+			log.Warnf("failed to read identity file %s: %v", entry.Name(), err)
 			continue
 		}
 
-		identities[id.Slug] = id
+		var rid RemoteIdentity
+		if err := yaml.Unmarshal(data, &rid); err != nil {
+			log.Warnf("corrupt identity file %s: %v", entry.Name(), err)
+			continue
+		}
+
+		idents[rid.Slug] = rid
 	}
 
-	return identities, nil
+	return idents, nil
 }
 
 // SaveIdentity writes a single identity file (e.g., .hnsync/my-post.yml)
+// SaveIdentity writes a single identity file into the state directory.
 func SaveIdentity(id RemoteIdentity) error {
 	if err := EnsureStateDir(); err != nil {
 		return err
@@ -63,6 +71,6 @@ func SaveIdentity(id RemoteIdentity) error {
 		return err
 	}
 
-	filename := fmt.Sprintf("%s.yml", id.Slug)
+	filename := fmt.Sprintf("%s%s", id.Slug, StateFileExt)
 	return AtomicWriteFile(StatePath(filename), data, FilePerm)
 }

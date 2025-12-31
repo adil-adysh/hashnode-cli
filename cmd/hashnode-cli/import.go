@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/api"
+	"adil-adysh/hashnode-cli/internal/cli/output"
 	"adil-adysh/hashnode-cli/internal/config"
 	"adil-adysh/hashnode-cli/internal/state"
 )
@@ -71,59 +72,59 @@ var importCmd = &cobra.Command{
 		// Iterate posts and write files
 		var articles []state.ArticleEntry
 		for _, edge := range resp.Publication.Posts.Edges {
-			p := edge.Node
-			title := p.Title
-			markdown := p.Content.Markdown
+			post := edge.Node
+			title := post.Title
+			content := post.Content.Markdown
 
 			// Determine target directory by published date if available, otherwise now
 			published := time.Now().UTC()
-			if p.PublishedAt != nil {
-				published = *p.PublishedAt
+			if post.PublishedAt != nil {
+				published = *post.PublishedAt
 			}
 			year := published.Year()
 			month := int(published.Month())
-			dir := fmt.Sprintf("%04d/%02d", year, month)
+			outDir := fmt.Sprintf("%04d/%02d", year, month)
 
 			// Choose filename under year/month
-			path, err := state.GenerateFilename(title, dir)
+			outPath, err := state.GenerateFilename(title, outDir)
 			if err != nil {
 				return fmt.Errorf("failed to generate filename for %s: %w", title, err)
 			}
 			// Ensure directory exists
-			if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(path)), state.DirPerm); err != nil {
+			if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(outPath)), state.DirPerm); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
 			}
-			if err := os.WriteFile(filepath.FromSlash(path), []byte(markdown), state.FilePerm); err != nil {
+			if err := os.WriteFile(filepath.FromSlash(outPath), []byte(content), state.FilePerm); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
 			}
 
-			checksum := state.ChecksumFromContent([]byte(markdown))
+			checksum := state.ChecksumFromContent([]byte(content))
 
 			// Local ID
 			localID := uuid.NewString()
 
 			// Series mapping
 			var seriesID string
-			if p.Series != nil {
-				seriesID = p.Series.Id
+			if post.Series != nil {
+				seriesID = post.Series.Id
 				// ensure series present in sum map
-				if _, ok := sum.Series[p.Series.Slug]; !ok {
-					sum.Series[p.Series.Slug] = state.SeriesEntry{SeriesID: p.Series.Id, Name: p.Series.Name, Slug: p.Series.Slug}
+				if _, ok := sum.Series[post.Series.Slug]; !ok {
+					sum.Series[post.Series.Slug] = state.SeriesEntry{SeriesID: post.Series.Id, Name: post.Series.Name, Slug: post.Series.Slug}
 				}
 			}
 
 			entry := state.ArticleEntry{
 				LocalID:      localID,
 				Title:        title,
-				MarkdownPath: path,
+				MarkdownPath: outPath,
 				SeriesID:     seriesID,
-				RemotePostID: p.Id,
+				RemotePostID: post.Id,
 				Checksum:     checksum,
 				LastSyncedAt: time.Now().UTC().Format(time.RFC3339),
 			}
 			articles = append(articles, entry)
-			sum.SetArticle(path, p.Id, checksum)
-			output.Info("Imported %s -> %s\n", path, p.Id)
+			sum.SetArticle(outPath, post.Id, checksum)
+			output.Info("Imported %s -> %s\n", outPath, post.Id)
 		}
 
 		// Save article registry and sum

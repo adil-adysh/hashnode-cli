@@ -24,33 +24,33 @@ type PlanItem struct {
 	Reason string
 }
 
-// GeneratePlan compares the authoritative .hashnode/article.yml entries
-// against the current filesystem. The article registry is the source of truth
-// for identity; paths are metadata.
+// GeneratePlan compares the authoritative article registry against the
+// current filesystem and produces a plan of actions. The registry is the
+// source of truth for identity; the file path is treated as metadata.
 func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 	var plan []PlanItem
 
-	for _, a := range articles {
-		path := a.MarkdownPath
-		// if path is empty or file missing, mark accordingly
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			// If the article was previously published remotely but the local file is gone,
-			// show a DELETE action so the user can remove the remote post.
-			if a.RemotePostID != "" {
+	for _, article := range articles {
+		articlePath := article.MarkdownPath
+
+		// If the path is empty or not present on disk, decide whether this is
+		// a remote-deletion candidate (DELETE) or simply missing locally (SKIP).
+		info, statErr := os.Stat(articlePath)
+		if statErr != nil || info.IsDir() {
+			if article.RemotePostID != "" {
 				plan = append(plan, PlanItem{
 					Type:   ActionDelete,
-					ID:     a.LocalID,
-					Title:  a.Title,
-					Path:   path,
+					ID:     article.LocalID,
+					Title:  article.Title,
+					Path:   articlePath,
 					Reason: "Local markdown missing; remote post exists and may be removed",
 				})
 			} else {
 				plan = append(plan, PlanItem{
 					Type:   ActionSkip,
-					ID:     a.LocalID,
-					Title:  a.Title,
-					Path:   path,
+					ID:     article.LocalID,
+					Title:  article.Title,
+					Path:   articlePath,
 					Reason: "Markdown file missing or inaccessible",
 				})
 			}
@@ -58,40 +58,39 @@ func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 		}
 
 		// Read file and compute checksum
-		data, err := os.ReadFile(path)
-		if err != nil {
+		content, readErr := os.ReadFile(articlePath)
+		if readErr != nil {
 			plan = append(plan, PlanItem{
 				Type:   ActionSkip,
-				ID:     a.LocalID,
-				Title:  a.Title,
-				Path:   path,
-				Reason: fmt.Sprintf("Failed to read file: %v", err),
+				ID:     article.LocalID,
+				Title:  article.Title,
+				Path:   articlePath,
+				Reason: fmt.Sprintf("Failed to read file: %v", readErr),
 			})
 			continue
 		}
 
-		current := state.ChecksumFromContent(data)
+		currentChecksum := state.ChecksumFromContent(content)
 
-		// If not yet published remotely
-		if a.RemotePostID == "" {
-			// If checksum matches registry, still needs create; if differs, still create
+		// If not yet published remotely, create
+		if article.RemotePostID == "" {
 			plan = append(plan, PlanItem{
 				Type:   ActionCreate,
-				ID:     a.LocalID,
-				Title:  a.Title,
-				Path:   path,
+				ID:     article.LocalID,
+				Title:  article.Title,
+				Path:   articlePath,
 				Reason: "Not published remotely",
 			})
 			continue
 		}
 
 		// If checksums differ -> update
-		if current != a.Checksum {
+		if currentChecksum != article.Checksum {
 			plan = append(plan, PlanItem{
 				Type:   ActionUpdate,
-				ID:     a.LocalID,
-				Title:  a.Title,
-				Path:   path,
+				ID:     article.LocalID,
+				Title:  article.Title,
+				Path:   articlePath,
 				Reason: "Local content differs from last synced checksum",
 			})
 			continue
@@ -100,9 +99,9 @@ func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 		// Otherwise up-to-date
 		plan = append(plan, PlanItem{
 			Type:   ActionSkip,
-			ID:     a.LocalID,
-			Title:  a.Title,
-			Path:   path,
+			ID:     article.LocalID,
+			Title:  article.Title,
+			Path:   articlePath,
 			Reason: "Up to date",
 		})
 	}
@@ -112,23 +111,28 @@ func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
 
 // PrintPlanSummary prints a summary of the plan to the terminal
 func PrintPlanSummary(plan []PlanItem) {
-		log.Printf("📝 Execution Plan: %d changes detected\n", countNonSkip(plan))
+	// Print a concise header that helps users scan the output quickly.
+	log.Printf("📝 Execution Plan: %d changes detected\n", countChanges(plan))
 	log.Println("---------------------------------------------------")
 	for _, item := range plan {
 		switch item.Type {
 		case ActionCreate:
-				log.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			log.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionUpdate:
-				log.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			log.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		case ActionDelete:
-				log.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			log.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+		case ActionSkip:
+			log.Printf("⚪ [SKIP] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
 		}
 	}
 	log.Println("---------------------------------------------------")
 	log.Println("Run 'hashnode apply' to execute these changes.")
 }
 
-func countNonSkip(plan []PlanItem) int {
+// countChanges returns the number of actionable changes (create/update/delete)
+// and excludes SKIP items which are informational.
+func countChanges(plan []PlanItem) int {
 	n := 0
 	for _, item := range plan {
 		if item.Type != ActionSkip {

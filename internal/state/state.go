@@ -6,32 +6,41 @@ import (
 	"path/filepath"
 
 	"adil-adysh/hashnode-cli/internal/log"
+
 	"gopkg.in/yaml.v3"
 )
 
 // PostState tracks the link between a local file and a remote Hashnode Post
+// PostState tracks the relationship between a local markdown file and
+// the corresponding remote Hashnode post. It is persisted as YAML under
+// the repository state directory (see `StateDir`).
 type PostState struct {
-	ID           string `yaml:"id"`           // Hashnode ID (The Source of Truth)
-	Slug         string `yaml:"slug"`         // The slug we expect
-	LastChecksum string `yaml:"lastChecksum"` // Hash of content when we last synced
-	RemoteURL    string `yaml:"remoteUrl"`    // For user convenience
+	ID           string `yaml:"id"`           // Hashnode ID (source of truth)
+	Slug         string `yaml:"slug"`         // The slug for this post
+	LastChecksum string `yaml:"lastChecksum"` // Hash of content when last synced
+	RemoteURL    string `yaml:"remoteUrl"`    // Optional remote URL for convenience
 }
 
 // StateDir is defined in consts.go
-// EnsureStateDir creates the hidden folder if it doesn't exist
+// EnsureStateDir ensures the repository state directory exists and is
+// writable. It is safe to call repeatedly.
 func EnsureStateDir() error {
 	dir := StatePath()
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, DirPerm)
+	if err := os.MkdirAll(dir, DirPerm); err != nil {
+		return fmt.Errorf("creating state dir %s: %w", dir, err)
 	}
 	return nil
 }
 
-// LoadState reads all .yml files in .hnsync/ and returns a map[Slug]PostState
+// LoadState reads all YAML files under the repository state directory and
+// returns a mapping keyed by post slug. Corrupt files are skipped with a
+// warning so a single bad file doesn't prevent loading the rest of the
+// registry.
 func LoadState() (map[string]PostState, error) {
-	state := make(map[string]PostState)
+	// `registry` makes it immediately clear this holds the on-disk registry
+	// of post states keyed by slug.
+	registry := make(map[string]PostState)
 
-	// Ensure dir exists first
 	if err := EnsureStateDir(); err != nil {
 		return nil, err
 	}
@@ -39,47 +48,52 @@ func LoadState() (map[string]PostState, error) {
 	dir := StatePath()
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing state dir %s: %w", dir, err)
 	}
 
-	for _, f := range files {
-		if filepath.Ext(f.Name()) != ".yml" {
+	for _, fi := range files {
+		if filepath.Ext(fi.Name()) != StateFileExt {
 			continue
 		}
 
-		path := filepath.Join(dir, f.Name())
+		path := filepath.Join(dir, fi.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read state %s: %w", f.Name(), err)
-		}
-
-		var s PostState
-		if err := yaml.Unmarshal(data, &s); err != nil {
-			// Don't crash, just warn (in a real app)
-			log.Warnf("⚠️ Warning: Corrupt state file %s\n", f.Name())
+			// Prefer a short warning so a single bad file doesn't block load.
+			log.Warnf("failed to read state file %s: %v", fi.Name(), err)
 			continue
 		}
 
-		// Map key is the slug from the state file
-		state[s.Slug] = s
+		var pst PostState
+		if err := yaml.Unmarshal(data, &pst); err != nil {
+			log.Warnf("corrupt state file %s: %v", fi.Name(), err)
+			continue
+		}
+
+		registry[pst.Slug] = pst
 	}
 
-	return state, nil
+	return registry, nil
 }
 
 // SaveState writes a single post's state to disk
-func SaveState(s PostState) error {
+// SaveState persists a single post state object to a file named
+// `<slug>.yml` under the repository state directory. The write is
+// performed atomically.
+// SaveState writes `post` into its on-disk representation (<slug>.yml).
+// Using a descriptive parameter name makes call-sites clearer and
+// reduces mental overhead when scanning the implementation.
+func SaveState(post PostState) error {
 	if err := EnsureStateDir(); err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(s)
+	data, err := yaml.Marshal(post)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal state for %s: %w", post.Slug, err)
 	}
 
-	// Filename under state dir
-	filename := fmt.Sprintf("%s.yml", s.Slug)
+	filename := fmt.Sprintf("%s%s", post.Slug, StateFileExt)
 	path := StatePath(filename)
 
 	return AtomicWriteFile(path, data, FilePerm)

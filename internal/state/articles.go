@@ -43,7 +43,8 @@ func LoadArticles() ([]ArticleEntry, error) {
 	return list, nil
 }
 
-// SaveArticles writes the provided list to .hashnode/article.yml
+// SaveArticles writes the provided list to the article registry file. Use
+// `articlesPath()` to compute the file location under the repo state dir.
 func SaveArticles(list []ArticleEntry) error {
 	path := articlesPath()
 	if err := WriteYAML(path, list); err != nil {
