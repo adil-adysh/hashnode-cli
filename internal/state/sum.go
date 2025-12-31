@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -29,7 +30,12 @@ const SumFile = "hashnode.sum"
 
 // LoadSum parses hashnode.sum in repo root. Returns os.ErrNotExist if missing.
 func LoadSum() (*Sum, error) {
-	f, err := os.Open(SumFile)
+	root, err := ProjectRoot()
+	if err != nil {
+		return nil, err
+	}
+	fpath := filepath.Join(root, SumFile)
+	f, err := os.Open(fpath)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +135,11 @@ func SaveSum(s *Sum) error {
 	}
 
 	// Write file
-	tmp := SumFile + ".tmp"
+	root, err := ProjectRoot()
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(root, SumFile+".tmp")
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
@@ -141,7 +151,7 @@ func SaveSum(s *Sum) error {
 		}
 	}
 	f.Close()
-	return os.Rename(tmp, SumFile)
+	return os.Rename(tmp, filepath.Join(root, SumFile))
 }
 
 // NewSumFromBlog attempts to construct a Sum with Blog info from .hashnode/blog.yml

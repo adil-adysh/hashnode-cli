@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 	"strings"
 
-	"adil-adysh/hashnode-cli/internal/diff"
+	"github.com/spf13/cobra"
+
 	"adil-adysh/hashnode-cli/internal/state"
 )
 
@@ -148,109 +148,137 @@ var stageListCmd = &cobra.Command{
 			return err
 		}
 
-		// Merge applied state and registry like plan does
-		sum, sumErr := state.LoadSum()
-		registry, regErr := state.LoadArticles()
+		// use staged data persisted in `hashnode.stage`
+
+		// build merged entries map (sum + registry) for titles/metadata
+		sum, _ := state.LoadSum()
+		registry, _ := state.LoadArticles()
 		regMap := make(map[string]state.ArticleEntry)
-		if regErr == nil {
-			for _, a := range registry {
-				regMap[a.MarkdownPath] = a
-			}
+		for _, a := range registry {
+			regMap[a.MarkdownPath] = a
 		}
-		var merged []state.ArticleEntry
-		if sumErr == nil {
+		mergedMap := map[string]state.ArticleEntry{}
+		if sum != nil {
 			if err := sum.ValidateAgainstBlog(); err == nil {
 				for path, sa := range sum.Articles {
 					entry := state.ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-					if reg, ok := regMap[path]; ok {
-						entry.Title = reg.Title
-						entry.LocalID = reg.LocalID
-						entry.SeriesID = reg.SeriesID
-						entry.LastSyncedAt = reg.LastSyncedAt
+					if r, ok := regMap[path]; ok {
+						entry.Title = r.Title
+						entry.LocalID = r.LocalID
+						entry.SeriesID = r.SeriesID
+						entry.LastSyncedAt = r.LastSyncedAt
 					}
-					merged = append(merged, entry)
+					mergedMap[path] = entry
 					delete(regMap, path)
 				}
 				for _, rem := range regMap {
-					merged = append(merged, rem)
+					mergedMap[rem.MarkdownPath] = rem
 				}
 			}
 		}
-		if len(merged) == 0 {
-			if regErr == nil {
-				merged = registry
-			} else {
-				return regErr
+		if len(mergedMap) == 0 {
+			for _, r := range registry {
+				mergedMap[r.MarkdownPath] = r
 			}
 		}
 
-		plan := diff.GeneratePlan(merged)
-
-		// Collect staged plan items
-		var staged []diff.PlanItem
-		for _, it := range plan {
-			if st.IsIncluded(it.Path) {
-				staged = append(staged, it)
-			}
-		}
-
-		// Group staged items: updates (CREATE/UPDATE) vs no change (SKIP)
-		var willUpdate []diff.PlanItem
-		var noChange []diff.PlanItem
-		var excludedItems []diff.PlanItem
-		for _, it := range plan {
-			if st.IsExcluded(it.Path) {
-				excludedItems = append(excludedItems, it)
+		// Collect staged entries from include list
+		var newItems []string
+		var updateItems []string
+		var noopItems []string
+		var deleteItems []string
+		for _, p := range st.Include {
+			// prefer persisted staged data
+			if s, ok := st.Staged[p]; ok {
+				switch s.State {
+				case state.ArticleStateNew:
+					newItems = append(newItems, p)
+				case state.ArticleStateUpdate:
+					updateItems = append(updateItems, p)
+				case state.ArticleStateDelete:
+					deleteItems = append(deleteItems, p)
+				case state.ArticleStateNoop:
+					noopItems = append(noopItems, p)
+				}
 				continue
 			}
-		}
-		for _, it := range staged {
-			if it.Type == diff.ActionUpdate || it.Type == diff.ActionCreate {
-				willUpdate = append(willUpdate, it)
-			} else if it.Type == diff.ActionSkip {
-				noChange = append(noChange, it)
+			// compute on-the-fly if no lock entry
+			if e, ok := mergedMap[p]; ok {
+				stt, _, _, _ := state.ComputeArticleState(e)
+				switch stt {
+				case state.ArticleStateNew:
+					newItems = append(newItems, p)
+				case state.ArticleStateUpdate:
+					updateItems = append(updateItems, p)
+				case state.ArticleStateDelete:
+					deleteItems = append(deleteItems, p)
+				case state.ArticleStateNoop:
+					noopItems = append(noopItems, p)
+				}
 			}
 		}
 
-		total := len(staged)
+		total := len(newItems) + len(updateItems) + len(noopItems) + len(deleteItems)
 		if total == 0 {
 			fmt.Println("Staged articles (0):\n  (none)")
 			return nil
 		}
 
 		fmt.Printf("Staged articles (%d):\n\n", total)
-		if len(willUpdate) > 0 {
-			fmt.Printf("🟡 Will update (%d)\n", len(willUpdate))
-			for _, it := range willUpdate {
-				title := it.Title
-				if title == "" {
-					title = state.NormalizePath(it.Path)
+		if len(updateItems) > 0 {
+			fmt.Printf("🟡 UPDATE (%d)\n", len(updateItems))
+			for _, p := range updateItems {
+				title := p
+				if e, ok := mergedMap[p]; ok && e.Title != "" {
+					title = e.Title
 				}
-				fmt.Printf("  - %s (%s)\n", title, it.Path)
+				fmt.Printf("  - %s (%s)\n", title, p)
 			}
 			fmt.Println()
 		}
-		if len(noChange) > 0 {
-			fmt.Printf("⚪ No changes (%d)\n", len(noChange))
-			for _, it := range noChange {
-				title := it.Title
-				if title == "" {
-					title = state.NormalizePath(it.Path)
+		if len(newItems) > 0 {
+			fmt.Printf("🆕 NEW (%d)\n", len(newItems))
+			for _, p := range newItems {
+				title := p
+				if e, ok := mergedMap[p]; ok && e.Title != "" {
+					title = e.Title
 				}
-				fmt.Printf("  - %s (%s)\n", title, it.Path)
+				fmt.Printf("  - %s (%s)\n", title, p)
+			}
+			fmt.Println()
+		}
+		if len(noopItems) > 0 {
+			fmt.Printf("⚪ NO CHANGE (%d)\n", len(noopItems))
+			for _, p := range noopItems {
+				title := p
+				if e, ok := mergedMap[p]; ok && e.Title != "" {
+					title = e.Title
+				}
+				fmt.Printf("  - %s (%s)\n", title, p)
+			}
+			fmt.Println()
+		}
+		if len(deleteItems) > 0 {
+			fmt.Printf("🔴 DELETE (%d)\n", len(deleteItems))
+			for _, p := range deleteItems {
+				title := p
+				if e, ok := mergedMap[p]; ok && e.Title != "" {
+					title = e.Title
+				}
+				fmt.Printf("  - %s (%s)\n", title, p)
 			}
 			fmt.Println()
 		}
 
-		// Excluded (explicitly excluded in stage)
-		if len(excludedItems) > 0 {
-			fmt.Printf("🚫 Excluded (%d)\n", len(excludedItems))
-			for _, it := range excludedItems {
-				title := it.Title
-				if title == "" {
-					title = state.NormalizePath(it.Path)
+		// show excluded paths
+		if len(st.Exclude) > 0 {
+			fmt.Printf("🚫 EXCLUDED (%d)\n", len(st.Exclude))
+			for _, p := range st.Exclude {
+				title := p
+				if e, ok := mergedMap[p]; ok && e.Title != "" {
+					title = e.Title
 				}
-				fmt.Printf("  - %s (%s)\n", title, it.Path)
+				fmt.Printf("  - %s (%s)\n", title, p)
 			}
 			fmt.Println()
 		}

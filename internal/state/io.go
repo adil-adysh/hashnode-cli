@@ -10,6 +10,12 @@ import (
 
 // StatePath returns a path under the repository state directory (.hashnode)
 func StatePath(parts ...string) string {
+	// Prefer an absolute path anchored at the repository root, if available.
+	if root, err := ProjectRoot(); err == nil {
+		elems := append([]string{root, StateDir}, parts...)
+		return filepath.Join(elems...)
+	}
+	// Fallback: return a relative path under .hashnode (preserves prior behavior)
 	elems := append([]string{StateDir}, parts...)
 	return filepath.Join(elems...)
 }

@@ -14,14 +14,15 @@ const StageFilename = "hashnode.stage"
 
 // Stage represents the declarative staging area (no runtime metadata)
 type Stage struct {
-	Version int      `yaml:"version"`
-	Include []string `yaml:"include"`
-	Exclude []string `yaml:"exclude"`
+	Version int                      `yaml:"version"`
+	Include []string                 `yaml:"include"`
+	Exclude []string                 `yaml:"exclude"`
+	Staged  map[string]StagedArticle `yaml:"staged,omitempty"`
 }
 
-// stagePath returns the repo-root path to hashnode.stage
+// stagePath returns the project-root path to hashnode.stage
 func stagePath() string {
-	return filepath.Join(repoRoot(), StateDir, StageFilename)
+	return filepath.Join(ProjectRootOrCwd(), StateDir, StageFilename)
 }
 
 // NormalizePath returns a repository-relative, forward-slash prefixed path
@@ -45,7 +46,7 @@ func NormalizePath(p string) string {
 }
 
 func getCwdOrDot() string {
-	return repoRoot()
+	return ProjectRootOrCwd()
 }
 
 // LoadStage reads hashnode.stage; if missing, returns an empty Stage (version 1)
@@ -54,7 +55,7 @@ func LoadStage() (*Stage, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Stage{Version: 1, Include: []string{}, Exclude: []string{}}, nil
+			return &Stage{Version: 1, Include: []string{}, Exclude: []string{}, Staged: map[string]StagedArticle{}}, nil
 		}
 		return nil, fmt.Errorf("failed to read %s: %w", path, err)
 	}
@@ -65,13 +66,16 @@ func LoadStage() (*Stage, error) {
 	if s.Version == 0 {
 		s.Version = 1
 	}
+	if s.Staged == nil {
+		s.Staged = map[string]StagedArticle{}
+	}
 	return &s, nil
 }
 
 // SaveStage writes the stage file deterministically
 func SaveStage(s *Stage) error {
-	// ensure state dir exists at repo root
-	dir := filepath.Join(repoRoot(), StateDir)
+	// ensure state dir exists at project root (fallbacks to cwd)
+	dir := filepath.Join(ProjectRootOrCwd(), StateDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to ensure state dir: %w", err)
 	}
@@ -95,6 +99,9 @@ func SaveStage(s *Stage) error {
 	}
 	s.Include = uniq(s.Include)
 	s.Exclude = uniq(s.Exclude)
+	if s.Staged == nil {
+		s.Staged = map[string]StagedArticle{}
+	}
 	// marshal
 	data, err := yaml.Marshal(s)
 	if err != nil {
@@ -131,13 +138,13 @@ func (s *Stage) Clear() {
 	s.Exclude = []string{}
 }
 
-// repoRoot locates the repository root by finding a folder that contains StateDir.
-// If not found, returns the current working directory.
-// The repoRoot function is defined in lock.go and should be used instead.
+// The project root is located by `ProjectRoot` (requires .hashnode and hashnode.sum)
+// Callers that previously used a string-returning helper should use
+// `ProjectRootOrCwd()` which falls back to the current working directory.
 
 // inRepo reports whether the absolute path is under the repository root
 func inRepo(abs string) bool {
-	root := repoRoot()
+	root := ProjectRootOrCwd()
 	rabs, err := filepath.Abs(root)
 	if err != nil {
 		rabs = root
@@ -201,7 +208,72 @@ func StageFile(path string) error {
 	}
 	st.Exclude = newEx
 	st.Include = append(st.Include, np)
-	return SaveStage(st)
+
+	// persist stage file
+	if err := SaveStage(st); err != nil {
+		return err
+	}
+
+	// compute staged article state and save to lock
+	// build merged entry from sum + registry like plan
+	mergedMap := map[string]ArticleEntry{}
+	sum, _ := LoadSum()
+	reg, _ := LoadArticles()
+	regMap := make(map[string]ArticleEntry)
+	for _, a := range reg {
+		regMap[a.MarkdownPath] = a
+	}
+	if sum != nil {
+		if err := sum.ValidateAgainstBlog(); err == nil {
+			for path, sa := range sum.Articles {
+				entry := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
+				if r, ok := regMap[path]; ok {
+					entry.Title = r.Title
+					entry.LocalID = r.LocalID
+					entry.SeriesID = r.SeriesID
+					entry.LastSyncedAt = r.LastSyncedAt
+				}
+				mergedMap[path] = entry
+				delete(regMap, path)
+			}
+			for _, rem := range regMap {
+				mergedMap[rem.MarkdownPath] = rem
+			}
+		}
+	}
+	if len(mergedMap) == 0 {
+		for _, r := range reg {
+			mergedMap[r.MarkdownPath] = r
+		}
+	}
+
+	entry, ok := mergedMap[np]
+	if !ok {
+		// not tracked; should not happen because we checked earlier
+		return fmt.Errorf("file is not tracked; cannot stage: %s", path)
+	}
+
+	stateType, localCS, remoteCS, err := ComputeArticleState(entry)
+	if err != nil {
+		return err
+	}
+
+	// persist staged state into the stage file
+	if st.Staged == nil {
+		st.Staged = map[string]StagedArticle{}
+	}
+	st.Staged[np] = StagedArticle{
+		ID:    entry.RemotePostID,
+		State: stateType,
+		Checksum: checksumPair{
+			Local:  localCS,
+			Remote: remoteCS,
+		},
+	}
+	if err := SaveStage(st); err != nil {
+		return err
+	}
+	return nil
 }
 
 // StageDir enumerates files under directory and stages tracked ones.
@@ -273,5 +345,149 @@ func StageDir(dir string) ([]string, []string, error) {
 	if err := SaveStage(st); err != nil {
 		return nil, nil, err
 	}
+
+	// compute staged states and persist into the stage file
+	// (persisted per-article state stored in Stage.Staged)
+
+	// build merged map like StageFile
+	regMap := make(map[string]ArticleEntry)
+	for _, a := range arts {
+		regMap[a.MarkdownPath] = a
+	}
+	sum, _ := LoadSum()
+	mergedMap := map[string]ArticleEntry{}
+	if sum != nil {
+		if err := sum.ValidateAgainstBlog(); err == nil {
+			for path, sa := range sum.Articles {
+				entry := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
+				if r, ok := regMap[path]; ok {
+					entry.Title = r.Title
+					entry.LocalID = r.LocalID
+					entry.SeriesID = r.SeriesID
+					entry.LastSyncedAt = r.LastSyncedAt
+				}
+				mergedMap[path] = entry
+				delete(regMap, path)
+			}
+			for _, rem := range regMap {
+				mergedMap[rem.MarkdownPath] = rem
+			}
+		}
+	}
+	if len(mergedMap) == 0 {
+		for _, r := range arts {
+			mergedMap[r.MarkdownPath] = r
+		}
+	}
+
+	for _, p := range staged {
+		if entry, ok := mergedMap[p]; ok {
+			s, localCS, remoteCS, err := ComputeArticleState(entry)
+			if err != nil {
+				// skip computing this one but continue
+				continue
+			}
+			st.Staged[p] = StagedArticle{
+				ID:    entry.RemotePostID,
+				State: s,
+				Checksum: checksumPair{
+					Local:  localCS,
+					Remote: remoteCS,
+				},
+			}
+		}
+	}
+	if err := SaveStage(st); err != nil {
+		return nil, nil, err
+	}
+
 	return staged, skipped, nil
+}
+
+// MigrateStagedPathsByRemote updates staged include/exclude and staged map keys
+// when articles are imported/renamed. It matches by RemotePostID and moves the
+// staged entry to the new path so intent is preserved across imports.
+func MigrateStagedPathsByRemote(newArticles []ArticleEntry) error {
+	st, err := LoadStage()
+	if err != nil {
+		return err
+	}
+	if st.Staged == nil {
+		st.Staged = map[string]StagedArticle{}
+	}
+
+	// build map remoteID -> newPath
+	remoteToPath := make(map[string]string)
+	for _, a := range newArticles {
+		if a.RemotePostID != "" {
+			remoteToPath[a.RemotePostID] = NormalizePath(a.MarkdownPath)
+		}
+	}
+
+	// For each staged entry, if it has an ID that matches a new article, rename key
+	moved := 0
+	for oldPath, sa := range st.Staged {
+		if sa.ID == "" {
+			continue
+		}
+		if newPath, ok := remoteToPath[sa.ID]; ok {
+			if oldPath == newPath {
+				continue
+			}
+			// move staged entry
+			st.Staged[newPath] = sa
+			delete(st.Staged, oldPath)
+			// update include list
+			for i, p := range st.Include {
+				if p == oldPath {
+					st.Include[i] = newPath
+				}
+			}
+			// update exclude list
+			for i, p := range st.Exclude {
+				if p == oldPath {
+					st.Exclude[i] = newPath
+				}
+			}
+			moved++
+		}
+	}
+
+	if moved > 0 {
+		return SaveStage(st)
+	}
+	return nil
+}
+
+// SetStagedEntry adds or updates a staged article entry and ensures it's included
+// in the stage include list. Path should be repository-relative or absolute.
+func SetStagedEntry(path string, id string, astate ArticleState, localChecksum, remoteChecksum string) error {
+	st, err := LoadStage()
+	if err != nil {
+		return err
+	}
+	if st.Staged == nil {
+		st.Staged = map[string]StagedArticle{}
+	}
+	np := NormalizePath(path)
+	// add to include if missing
+	found := false
+	for _, p := range st.Include {
+		if p == np {
+			found = true
+			break
+		}
+	}
+	if !found {
+		st.Include = append(st.Include, np)
+	}
+	st.Staged[np] = StagedArticle{
+		ID:    id,
+		State: astate,
+		Checksum: checksumPair{
+			Local:  localChecksum,
+			Remote: remoteChecksum,
+		},
+	}
+	return SaveStage(st)
 }

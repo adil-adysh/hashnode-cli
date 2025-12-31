@@ -20,8 +20,9 @@ const StateDir = ".hashnode"
 
 // EnsureStateDir creates the hidden folder if it doesn't exist
 func EnsureStateDir() error {
-	if _, err := os.Stat(StateDir); os.IsNotExist(err) {
-		return os.Mkdir(StateDir, 0755)
+	dir := StatePath()
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return os.MkdirAll(dir, 0755)
 	}
 	return nil
 }
@@ -35,7 +36,8 @@ func LoadState() (map[string]PostState, error) {
 		return nil, err
 	}
 
-	files, err := os.ReadDir(StateDir)
+	dir := StatePath()
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +47,7 @@ func LoadState() (map[string]PostState, error) {
 			continue
 		}
 
-		path := filepath.Join(StateDir, f.Name())
+		path := filepath.Join(dir, f.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read state %s: %w", f.Name(), err)
@@ -76,9 +78,9 @@ func SaveState(s PostState) error {
 		return err
 	}
 
-	// Filename: .hnsync/my-slug.yml
+	// Filename under state dir
 	filename := fmt.Sprintf("%s.yml", s.Slug)
-	path := filepath.Join(StateDir, filename)
+	path := StatePath(filename)
 
 	return os.WriteFile(path, data, 0644)
 }

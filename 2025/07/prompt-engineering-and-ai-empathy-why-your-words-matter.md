@@ -181,8 +181,8 @@ So next time you’re prompting AI, ask yourself:
 * Am I being vague or specific?
     
 * Is my structure helping or confusing?
+    
 
 Make small changes, observe what shifts, and learn from every response.
 
 ---
-

@@ -9,35 +9,16 @@ import (
 
 const LockFile = "hashnode.lock"
 
-// repoRoot attempts to find the repository root by walking up directories
-// looking for common top-level markers like go.mod or .git. If none are
-// found it returns the current working directory.
-func repoRoot() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	cur := cwd
-	for {
-		// Prefer a repository state dir if present
-		if fi, err := os.Stat(filepath.Join(cur, StateDir)); err == nil && fi.IsDir() {
-			return cur
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			// reached FS root
-			return cwd
-		}
-		cur = parent
-	}
-}
+// AcquireRepoLock creates a lock file at the project root. It returns a
+// release function which should be deferred by the caller to remove the lock.
+// If the lock file already exists, an error is returned.
 
 // AcquireRepoLock creates a lock file at the repository root. It returns a
 // release function which should be deferred by the caller to remove the lock.
 // If the lock file already exists, an error is returned.
 func AcquireRepoLock() (func() error, error) {
-	// Ensure state dir exists at repo root and place lock inside it for visibility
-	root := repoRoot()
+	// Ensure state dir exists at project root and place lock inside it for visibility
+	root := ProjectRootOrCwd()
 	stateDirPath := filepath.Join(root, StateDir)
 	if err := os.MkdirAll(stateDirPath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to ensure state dir: %w", err)

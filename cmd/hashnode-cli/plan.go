@@ -76,7 +76,7 @@ var planCmd = &cobra.Command{
 		// Full diff from authoritative applied state -> working tree
 		plan := diff.GeneratePlan(merged)
 
-		// Load stage and partition plan according to include/exclude
+		// Load stage and lock; trust lock staged state as source-of-truth for staged items
 		st, err := state.LoadStage()
 		if err != nil {
 			fmt.Printf("⚠️  failed to load stage: %v\n", err)
@@ -86,25 +86,68 @@ var planCmd = &cobra.Command{
 		var stagedItems []diff.PlanItem
 		var excludedItems []diff.PlanItem
 		var unstagedItems []diff.PlanItem
+		// build quick map from plan by path for metadata
+		planMap := make(map[string]diff.PlanItem)
 		for _, item := range plan {
-			if st.IsIncluded(item.Path) {
-				stagedItems = append(stagedItems, item)
+			planMap[item.Path] = item
+		}
+
+		// For each included path, if there's a staged entry in lock, use that state.
+		for _, p := range st.Include {
+			if s, ok := st.Staged[p]; ok {
+				// map staged state to PlanItem.Type
+				var t diff.ActionType
+				switch s.State {
+				case state.ArticleStateNew:
+					t = diff.ActionCreate
+				case state.ArticleStateUpdate:
+					t = diff.ActionUpdate
+				case state.ArticleStateDelete:
+					t = diff.ActionDelete
+				case state.ArticleStateNoop:
+					t = diff.ActionSkip
+				default:
+					t = diff.ActionSkip
+				}
+				base := planMap[p]
+				base.Type = t
+				// annotate reason from staged state
+				base.Reason = string(s.State)
+				stagedItems = append(stagedItems, base)
 				continue
 			}
+			// no staged entry; fall back to scanning plan
+			if it, ok := planMap[p]; ok {
+				stagedItems = append(stagedItems, it)
+				continue
+			}
+		}
+
+		for _, item := range plan {
 			if st.IsExcluded(item.Path) {
 				excludedItems = append(excludedItems, item)
 				continue
 			}
-			unstagedItems = append(unstagedItems, item)
+			// if not included, treat as unstaged
+			if !st.IsIncluded(item.Path) {
+				unstagedItems = append(unstagedItems, item)
+			}
 		}
 
-		// Compute summary counts
+		// Compute summary counts by staged state
 		updates := 0
+		newCount := 0
 		noop := 0
+		deletes := 0
 		for _, it := range stagedItems {
-			if it.Type == diff.ActionCreate || it.Type == diff.ActionUpdate {
+			switch it.Type {
+			case diff.ActionCreate:
+				newCount++
+			case diff.ActionUpdate:
 				updates++
-			} else if it.Type == diff.ActionSkip {
+			case diff.ActionDelete:
+				deletes++
+			case diff.ActionSkip:
 				noop++
 			}
 		}
@@ -137,19 +180,20 @@ var planCmd = &cobra.Command{
 					if title == "" {
 						title = state.NormalizePath(it.Path)
 					}
-					fmt.Printf("  - %s\n    Reason: %s\n", title, it.Reason)
+					// check for staleness
+					staleNote := ""
+					if s, ok := st.Staged[it.Path]; ok {
+						if state.IsStagingStale(s, it.Path) {
+							staleNote = "\n    ⚠️  Article changed after staging — re-stage required"
+						}
+					}
+					fmt.Printf("  - %s\n    Reason: %s%s\n", title, it.Reason, staleNote)
 				}
 			}
 		}
 
 		// Deletes
-		delCount := 0
-		for _, it := range stagedItems {
-			if it.Type == diff.ActionDelete {
-				delCount++
-			}
-		}
-		if delCount > 0 {
+		if deletes > 0 {
 			fmt.Println()
 			fmt.Println("🔴 DELETE")
 			for _, it := range stagedItems {
@@ -158,7 +202,13 @@ var planCmd = &cobra.Command{
 					if title == "" {
 						title = state.NormalizePath(it.Path)
 					}
-					fmt.Printf("  - %s\n    Reason: %s\n", title, it.Reason)
+					staleNote := ""
+					if s, ok := st.Staged[it.Path]; ok {
+						if state.IsStagingStale(s, it.Path) {
+							staleNote = "\n    ⚠️  Article changed after staging — re-stage required"
+						}
+					}
+					fmt.Printf("  - %s\n    Reason: %s%s\n", title, it.Reason, staleNote)
 				}
 			}
 		}

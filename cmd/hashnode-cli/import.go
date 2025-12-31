@@ -134,6 +134,46 @@ var importCmd = &cobra.Command{
 			return fmt.Errorf("failed to save hashnode.sum: %w", err)
 		}
 
+		// Persist staged entries for imported files so they appear in `stage list`.
+		st, err := state.LoadStage()
+		if err != nil {
+			return fmt.Errorf("failed to load stage: %w", err)
+		}
+		if st.Staged == nil {
+			st.Staged = map[string]state.StagedArticle{}
+		}
+		for _, a := range articles {
+			np := state.NormalizePath(a.MarkdownPath)
+			// add to include if not present
+			found := false
+			for _, p := range st.Include {
+				if p == np {
+					found = true
+					break
+				}
+			}
+			if !found {
+				st.Include = append(st.Include, np)
+			}
+			sType, localCS, remoteCS, serr := state.ComputeArticleState(a)
+			if serr != nil {
+				fmt.Printf("ℹ️  could not compute staged state for %s: %v\n", a.MarkdownPath, serr)
+				continue
+			}
+			if err := state.SetStagedEntry(a.MarkdownPath, a.RemotePostID, sType, localCS, remoteCS); err != nil {
+				fmt.Printf("ℹ️  could not persist staged entry for %s: %v\n", a.MarkdownPath, err)
+			}
+		}
+		if err := state.SaveStage(st); err != nil {
+			return fmt.Errorf("failed to save stage: %w", err)
+		}
+
+		// Migrate staged paths: if a staged entry referenced a remote post id that
+		// was just imported, move the staged entry to the new path to preserve intent.
+		if err := state.MigrateStagedPathsByRemote(articles); err != nil {
+			return fmt.Errorf("failed to migrate staged paths: %w", err)
+		}
+
 		fmt.Println("import: completed")
 		return nil
 	},

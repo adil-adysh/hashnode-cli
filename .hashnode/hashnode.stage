@@ -1,7 +1,6 @@
 version: 1
-include: []
-exclude:
-    - .
-    - ./2025/07/prompt-engineering-and-ai-empathy-why-your-words-matter-1.md
-    - ./2025/11/direnv-on-windows-with-powershell-fixing-github-cli-ghhost-issues-full-setup-guide-1.md
-    - ./2025/11/hacking-in-the-dark-making-kali-linux-orca-and-vmware-accessible-1.md
+include:
+    - ./2025/07/prompt-engineering-and-ai-empathy-why-your-words-matter.md
+    - ./2025/11/direnv-on-windows-with-powershell-fixing-github-cli-ghhost-issues-full-setup-guide.md
+    - ./2025/11/hacking-in-the-dark-making-kali-linux-orca-and-vmware-accessible.md
+exclude: []

@@ -22,8 +22,8 @@ func LoadIdentities() (map[string]RemoteIdentity, error) {
 	if err := EnsureStateDir(); err != nil {
 		return nil, err
 	}
-
-	entries, err := os.ReadDir(StateDir)
+	dir := StatePath()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func LoadIdentities() (map[string]RemoteIdentity, error) {
 			continue
 		}
 
-		path := filepath.Join(StateDir, e.Name())
+		path := filepath.Join(dir, e.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read state %s: %w", e.Name(), err)
@@ -63,5 +63,5 @@ func SaveIdentity(id RemoteIdentity) error {
 	}
 
 	filename := fmt.Sprintf("%s.yml", id.Slug)
-	return os.WriteFile(filepath.Join(StateDir, filename), data, 0644)
+	return os.WriteFile(StatePath(filename), data, 0644)
 }
