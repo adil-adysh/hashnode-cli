@@ -20,6 +20,22 @@ func StatePath(parts ...string) string {
 	return filepath.Join(elems...)
 }
 
+// NormalizePath returns a repository-relative, slash-separated path for
+// consistent keys. If the path cannot be made relative to the project root,
+// it returns an absolute path with forward slashes.
+func NormalizePath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.ToSlash(p)
+	}
+	root := ProjectRootOrCwd()
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return filepath.ToSlash(abs)
+	}
+	return filepath.ToSlash(rel)
+}
+
 // ReadYAML reads a YAML file at path and unmarshals into out.
 // Caller may check os.IsNotExist on the returned error.
 func ReadYAML(path string, out interface{}) error {

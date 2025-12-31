@@ -1,490 +1,258 @@
 package state
 
-"fmt"
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
+	"time"
 )
 
-// StageFilename is defined in consts.go
+// ItemType allows us to distinguish between content and containers
+type ItemType string
 
-// Stage represents the declarative staging area (no runtime metadata)
+const (
+	TypeArticle ItemType = "ARTICLE"
+	TypeSeries  ItemType = "SERIES"
+)
+
+// Operation explicitly tracks intent
+type Operation string
+
+const (
+	OpModify Operation = "MODIFY" // Add or Update (Content exists)
+	OpDelete Operation = "DELETE" // Intent to remove
+)
+
+// StagedItem represents a unit of work waiting to be planned
+type StagedItem struct {
+	Type      ItemType  `yaml:"type"`
+	Key       string    `yaml:"key"` // Path (Article) or Slug (Series)
+	Checksum  string    `yaml:"checksum,omitempty"`
+	Snapshot  string    `yaml:"snapshot,omitempty"` // Filename in .hashnode/snapshots/
+	Operation Operation `yaml:"operation"`
+	StagedAt  time.Time `yaml:"staged_at"`
+	// Metadata previously stored in article registry. Keeping here
+	// allows the stage to be the single source of truth for both
+	// intent and persisted metadata.
+	LocalID      string `yaml:"local_id,omitempty"`
+	Title        string `yaml:"title,omitempty"`
+	SeriesID     string `yaml:"series_id,omitempty"`
+	RemotePostID string `yaml:"remote_post_id,omitempty"`
+	LastSyncedAt string `yaml:"last_synced_at,omitempty"`
+}
+
+// Stage represents the declarative staging area
 type Stage struct {
-	Version int                      `yaml:"version"`
-	Include []string                 `yaml:"include"`
-	Exclude []string                 `yaml:"exclude"`
-	Staged  map[string]StagedArticle `yaml:"staged,omitempty"`
+	Version int                   `yaml:"version"`
+	Items   map[string]StagedItem `yaml:"items"`
+	// New schema: Items holds all staged entries keyed by normalized path
 }
 
-// stagePath returns the project-root path to hashnode.stage
-func stagePath() string {
-	return StatePath(StageFilename)
-}
-
-// NormalizePath returns a repository-relative, forward-slash prefixed path
-// e.g. ./posts/foo.md
-func NormalizePath(p string) string {
-	// make clean and relative
-	rp := filepath.ToSlash(filepath.Clean(p))
-	if len(rp) == 0 {
-		return ""
-	}
-	// if absolute, make relative to cwd
-	if filepath.IsAbs(p) {
-		if rel, err := filepath.Rel(getCwdOrDot(), p); err == nil {
-			rp = filepath.ToSlash(filepath.Clean(rel))
-		}
-	}
-	if rp[0] != '.' && rp[0] != '/' {
-		rp = "./" + rp
-	}
-	return rp
-}
-
-func getCwdOrDot() string {
-	return ProjectRootOrCwd()
-}
-
-// LoadStage reads hashnode.stage; if missing, returns an empty Stage (version 1)
+// LoadStage reads the stage file or returns a fresh empty stage
 func LoadStage() (*Stage, error) {
-	path := stagePath()
+	path := StatePath(StageFilename)
 	var s Stage
-	// Treat missing stage file as empty/default stage to simplify callers.
-	if err := LoadYAMLOrEmpty(path, &s); err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+
+	// If stage file doesn't exist, return a fresh empty stage.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		s = Stage{
+			Version: 2,
+			Items:   make(map[string]StagedItem),
+		}
+		return &s, nil
 	}
-	if s.Version == 0 {
-		s.Version = 1
+
+	if err := ReadYAML(path, &s); err != nil {
+		return nil, fmt.Errorf("failed to read stage: %w", err)
 	}
-	if s.Staged == nil {
-		s.Staged = map[string]StagedArticle{}
-	}
-	if s.Include == nil {
-		s.Include = []string{}
-	}
-	if s.Exclude == nil {
-		s.Exclude = []string{}
+
+	if s.Items == nil {
+		s.Items = make(map[string]StagedItem)
 	}
 	return &s, nil
 }
 
-// SaveStage writes the stage file deterministically
+// SaveStage persists the stage to disk atomically
 func SaveStage(s *Stage) error {
 	if err := EnsureStateDir(); err != nil {
-		return fmt.Errorf("failed to ensure state dir: %w", err)
+		return err
 	}
-	// normalize and sort entries for determinism
-	uniq := func(list []string) []string {
-		m := make(map[string]struct{})
-		var out []string
-		for _, p := range list {
-			np := NormalizePath(p)
-			if np == "" {
-				continue
-			}
-			if _, ok := m[np]; ok {
-				continue
-			}
-			m[np] = struct{}{}
-			out = append(out, np)
-		}
-		sort.Strings(out)
-		return out
+	if s.Items == nil {
+		s.Items = make(map[string]StagedItem)
 	}
-	s.Include = uniq(s.Include)
-	s.Exclude = uniq(s.Exclude)
-	if s.Staged == nil {
-		s.Staged = map[string]StagedArticle{}
-	}
-	// marshal
-	data, err := yaml.Marshal(s)
-	if err != nil {
-		return fmt.Errorf("failed to marshal stage: %w", err)
-	}
-	return AtomicWriteFile(stagePath(), data, FilePerm)
+	return WriteYAML(StatePath(StageFilename), s)
 }
 
-// IsIncluded reports whether path is explicitly included in the stage
-func (s *Stage) IsIncluded(path string) bool {
-	np := NormalizePath(path)
-	for _, p := range s.Include {
-		if p == np {
-			return true
-		}
-	}
-	return false
-}
-
-// IsExcluded reports whether path is explicitly excluded in the stage
-func (s *Stage) IsExcluded(path string) bool {
-	np := NormalizePath(path)
-	for _, p := range s.Exclude {
-		if p == np {
-			return true
-		}
-	}
-	return false
-}
-
-// Clear empties the stage (used after successful apply)
+// Clear resets the in-memory stage to empty state.
 func (s *Stage) Clear() {
-	s.Include = []string{}
-	s.Exclude = []string{}
+	s.Items = make(map[string]StagedItem)
 }
 
-// The project root is located by `ProjectRoot` (requires .hashnode and hashnode.sum)
-// Callers that previously used a string-returning helper should use
-// `ProjectRootOrCwd()` which falls back to the current working directory.
+// SetStagedEntry is a compatibility helper to persist an old-style staged entry.
+// MigrateStagedPathsByRemote is removed; use external migration tooling if needed.
 
-// inRepo reports whether the absolute path is under the repository root
-func inRepo(abs string) bool {
-	root := ProjectRootOrCwd()
-	rabs, err := filepath.Abs(root)
-	if err != nil {
-		rabs = root
-	}
-	pabs, err := filepath.Abs(abs)
-	if err != nil {
-		return false
-	}
-	rel, err := filepath.Rel(rabs, pabs)
-	if err != nil {
-		return false
-	}
-	return rel == "." || !strings.HasPrefix(rel, "..")
-}
+// (Legacy helpers removed) Use `Stage.Items` and `StageAdd`/`StageDir` directly.
 
-// StageFile stages a single file. It fails if the file is not tracked.
-func StageFile(path string) error {
-	// ensure exists and is file
-	fi, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("path does not exist: %w", err)
-	}
-	if fi.IsDir() {
-		return fmt.Errorf("path is a directory")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("failed to resolve path: %w", err)
-	}
-	if !inRepo(absPath) {
-		return fmt.Errorf("path is outside repository: %s", path)
-	}
-
-	// load registry to check tracked
-	articles, err := LoadArticles()
-	if err != nil {
-		return fmt.Errorf("failed to load article registry: %w", err)
-	}
-	tracked := make(map[string]struct{})
-	for _, a := range articles {
-		tracked[NormalizePath(a.MarkdownPath)] = struct{}{}
-	}
-
-	np := NormalizePath(path)
-	if _, ok := tracked[np]; !ok {
-		return fmt.Errorf("file is not tracked; cannot stage: %s", path)
-	}
-
-	stage, err := LoadStage()
-	if err != nil {
-		return err
-	}
-	// remove from exclude and add to include
-	var newEx []string
-	for _, e := range stage.Exclude {
-		if e == np {
-			continue
-		}
-		newEx = append(newEx, e)
-	}
-	stage.Exclude = newEx
-	stage.Include = append(stage.Include, np)
-
-	// persist stage file early so subsequent computations see the updated include
-	if err := SaveStage(stage); err != nil {
-		return err
-	}
-
-	// build merged lookup from sum + registry (like plan generation)
-	mergedEntries := map[string]ArticleEntry{}
-	sum, _ := LoadSum()
-	registry, _ := LoadArticles()
-	registryMap := make(map[string]ArticleEntry)
-	for _, a := range registry {
-		registryMap[a.MarkdownPath] = a
-	}
-	if sum != nil {
-		if err := sum.ValidateAgainstBlog(); err == nil {
-			for path, sa := range sum.Articles {
-				ent := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-				if r, ok := registryMap[path]; ok {
-					ent.Title = r.Title
-					ent.LocalID = r.LocalID
-					ent.SeriesID = r.SeriesID
-					ent.LastSyncedAt = r.LastSyncedAt
-				}
-				mergedEntries[path] = ent
-				delete(registryMap, path)
-			}
-			for _, rem := range registryMap {
-				mergedEntries[rem.MarkdownPath] = rem
-			}
-		}
-	}
-	if len(mergedEntries) == 0 {
-		for _, r := range registry {
-			mergedEntries[r.MarkdownPath] = r
-		}
-	}
-
-	entry, ok := mergedEntries[np]
-	if !ok {
-		// not tracked; should not happen because we checked earlier
-		return fmt.Errorf("file is not tracked; cannot stage: %s", path)
-	}
-
-	stateType, localCS, remoteCS, err := ComputeArticleState(entry)
-	if err != nil {
-		return err
-	}
-
-	// persist staged state into the stage file
-	if stage.Staged == nil {
-		stage.Staged = map[string]StagedArticle{}
-	}
-	stage.Staged[np] = StagedArticle{
-		ID:    entry.RemotePostID,
-		State: stateType,
-		Checksum: checksumPair{
-			Local:  localCS,
-			Remote: remoteCS,
-		},
-	}
-	if err := SaveStage(stage); err != nil {
-		return err
-	}
-	return nil
-}
-
-// StageDir enumerates files under directory and stages tracked ones.
-// Returns lists of staged and skipped (untracked or excluded) paths.
+// StageDir walks `dir` and stages tracked markdown files. Returns lists of staged and skipped paths.
 func StageDir(dir string) ([]string, []string, error) {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("path does not exist: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, nil, fmt.Errorf("path is not a directory: %s", dir)
-	}
-
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve dir: %w", err)
-	}
-	if !inRepo(absDir) {
-		return nil, nil, fmt.Errorf("path is outside repository: %s", dir)
-	}
-
-	// load registry and stage
-	articles, err := LoadArticles()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load article registry: %w", err)
-	}
-	stage, err := LoadStage()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tracked := make(map[string]struct{})
-	for _, a := range articles {
-		tracked[NormalizePath(a.MarkdownPath)] = struct{}{}
-	}
-
 	var staged []string
 	var skipped []string
-
-	// Walk the directory and consider files
-	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, werr error) error {
-		if werr != nil {
-			return werr
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		np := NormalizePath(p)
-		// if explicitly excluded, skip
-		if stage.IsExcluded(np) {
-			skipped = append(skipped, np)
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext != ".md" && ext != ".markdown" {
+			skipped = append(skipped, p)
 			return nil
 		}
-		// if tracked, stage
-		if _, ok := tracked[np]; ok {
-			stage.Include = append(stage.Include, np)
-			staged = append(staged, np)
+		if err := StageAdd(p); err != nil {
+			skipped = append(skipped, p)
 			return nil
 		}
-		// else untracked skip
-		skipped = append(skipped, np)
+		staged = append(staged, NormalizePath(p))
 		return nil
 	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// persist stage deterministically
-	if err := SaveStage(stage); err != nil {
-		return nil, nil, err
-	}
-
-	// compute staged states and persist into the stage file
-	// (persisted per-article state stored in Stage.Staged)
-
-	// build merged map like StageFile
-	registryMap := make(map[string]ArticleEntry)
-	for _, a := range articles {
-		registryMap[a.MarkdownPath] = a
-	}
-	sum, _ := LoadSum()
-	mergedMap := map[string]ArticleEntry{}
-	if sum != nil {
-		if err := sum.ValidateAgainstBlog(); err == nil {
-			for path, sa := range sum.Articles {
-				e := ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-				if r, ok := registryMap[path]; ok {
-					e.Title = r.Title
-					e.LocalID = r.LocalID
-					e.SeriesID = r.SeriesID
-					e.LastSyncedAt = r.LastSyncedAt
-				}
-				mergedMap[path] = e
-				delete(registryMap, path)
-			}
-			for _, rem := range registryMap {
-				mergedMap[rem.MarkdownPath] = rem
-			}
-		}
-	}
-	if len(mergedMap) == 0 {
-		for _, r := range articles {
-			mergedMap[r.MarkdownPath] = r
-		}
-	}
-
-	for _, p := range staged {
-		if entry, ok := mergedMap[p]; ok {
-			s, localCS, remoteCS, err := ComputeArticleState(entry)
-			if err != nil {
-				// skip computing this one but continue
-				continue
-			}
-			stage.Staged[p] = StagedArticle{
-				ID:    entry.RemotePostID,
-				State: s,
-				Checksum: checksumPair{
-					Local:  localCS,
-					Remote: remoteCS,
-				},
-			}
-		}
-	}
-	if err := SaveStage(stage); err != nil {
-		return nil, nil, err
-	}
-
-	return staged, skipped, nil
+	return staged, skipped, err
 }
 
-// MigrateStagedPathsByRemote updates staged include/exclude and staged map keys
-// when articles are imported/renamed. It matches by RemotePostID and moves the
-// staged entry to the new path so intent is preserved across imports.
-func MigrateStagedPathsByRemote(newArticles []ArticleEntry) error {
+// StageAdd adds or updates a file in the stage.
+// It captures a snapshot of the content to ensure consistency.
+func StageAdd(path string) error {
+	// 1. Validation
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+	if !inRepo(absPath) {
+		return fmt.Errorf("path is outside repository")
+	}
+
+	// 2. Read Content & Compute Hash
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+	checksum := ChecksumFromContent(content)
+
+	// 3. Create Snapshot
+	// We save the content to .hashnode/snapshots/<hash>.md
+	// This ensures that even if the user edits the file later, the 'Plan' uses this version.
+	snapshotName := fmt.Sprintf("%s.md", checksum)
+	if err := saveSnapshot(snapshotName, content); err != nil {
+		return err
+	}
+
+	// 4. Update Stage Data
 	st, err := LoadStage()
 	if err != nil {
 		return err
 	}
-	if st.Staged == nil {
-		st.Staged = map[string]StagedArticle{}
+
+	// Normalized Path is the Key
+	key := NormalizePath(path)
+
+	st.Items[key] = StagedItem{
+		Type:      TypeArticle,
+		Key:       key,
+		Operation: OpModify,
+		Checksum:  checksum,
+		Snapshot:  snapshotName,
+		StagedAt:  time.Now(),
 	}
 
-	// build map remoteID -> newPath
-	remoteToPath := make(map[string]string)
-	for _, a := range newArticles {
-		if a.RemotePostID != "" {
-			remoteToPath[a.RemotePostID] = NormalizePath(a.MarkdownPath)
-		}
+	return SaveStage(st)
+}
+
+// StageRemove marks a path for deletion in the stage.
+// It does NOT need the file to exist on disk.
+func StageRemove(path string) error {
+	st, err := LoadStage()
+	if err != nil {
+		return err
 	}
 
-	// For each staged entry, if it has an ID that matches a new article, rename key
-	moved := 0
-	for oldPath, sa := range st.Staged {
-		if sa.ID == "" {
-			continue
-		}
-		if newPath, ok := remoteToPath[sa.ID]; ok {
-			if oldPath == newPath {
-				continue
-			}
-			// move staged entry
-			st.Staged[newPath] = sa
-			delete(st.Staged, oldPath)
-			// update include list
-			for i, p := range st.Include {
-				if p == oldPath {
-					st.Include[i] = newPath
-				}
-			}
-			// update exclude list
-			for i, p := range st.Exclude {
-				if p == oldPath {
-					st.Exclude[i] = newPath
-				}
-			}
-			moved++
-		}
+	key := NormalizePath(path)
+
+	// We record the deletion intent even if the file is already gone from disk.
+	st.Items[key] = StagedItem{
+		Type:      TypeArticle,
+		Key:       key,
+		Operation: OpDelete,
+		StagedAt:  time.Now(),
+		// No checksum or snapshot needed for a deletion
 	}
 
-	if moved > 0 {
+	return SaveStage(st)
+}
+
+// Unstage removes an item from the stage completely (reverting to unstaged state).
+// This is different from StageRemove (which intends to delete remotely).
+func Unstage(path string) error {
+	st, err := LoadStage()
+	if err != nil {
+		return err
+	}
+	key := NormalizePath(path)
+
+	if _, ok := st.Items[key]; ok {
+		delete(st.Items, key)
 		return SaveStage(st)
 	}
 	return nil
 }
 
-// SetStagedEntry adds or updates a staged article entry and ensures it's included
-// in the stage include list. Path should be repository-relative or absolute.
-func SetStagedEntry(path string, id string, astate ArticleState, localChecksum, remoteChecksum string) error {
-	st, err := LoadStage()
+// Helper: saveSnapshot writes content to .hashnode/snapshots/
+func saveSnapshot(filename string, content []byte) error {
+	snapDir := StatePath("snapshots")
+	if err := os.MkdirAll(snapDir, 0755); err != nil {
+		return fmt.Errorf("failed to create snapshot dir: %w", err)
+	}
+
+	path := filepath.Join(snapDir, filename)
+
+	// Optimization: If snapshot exists, don't re-write (Content Addressable)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+
+	return AtomicWriteFile(path, content, 0644)
+}
+
+// IsStagingItemStale returns true if the current local checksum differs from the staged item's checksum
+func IsStagingItemStale(item StagedItem, path string) bool {
+	fsPath := filepath.FromSlash(path)
+	if !filepath.IsAbs(fsPath) {
+		fsPath = filepath.Join(ProjectRootOrCwd(), fsPath)
+	}
+	info, err := os.Stat(fsPath)
+	if err != nil || info.IsDir() {
+		return item.Checksum != ""
+	}
+	data, err := os.ReadFile(fsPath)
 	if err != nil {
-		return err
+		return true
 	}
-	if st.Staged == nil {
-		st.Staged = map[string]StagedArticle{}
-	}
-	np := NormalizePath(path)
-	// add to include if missing
-	found := false
-	for _, p := range st.Include {
-		if p == np {
-			found = true
-			break
-		}
-	}
-	if !found {
-		st.Include = append(st.Include, np)
-	}
-	st.Staged[np] = StagedArticle{
-		ID:    id,
-		State: astate,
-		Checksum: checksumPair{
-			Local:  localChecksum,
-			Remote: remoteChecksum,
-		},
-	}
-	return SaveStage(st)
+	cur := ChecksumFromContent(data)
+	return cur != item.Checksum
+}
+
+// Helper: GetSnapshotContent retrieves the frozen content for planning/pushing
+func GetSnapshotContent(filename string) ([]byte, error) {
+	path := StatePath("snapshots", filename)
+	return os.ReadFile(path)
+}
+
+// AtomicWriteFile writes data to a temp file and renames it to ensure atomicity
+// NOTE: You likely have this in your utils, but included here for completeness
+
+// inRepo checks if path is inside project root
+func inRepo(absPath string) bool {
+	root := ProjectRootOrCwd()
+	rel, err := filepath.Rel(root, absPath)
+	return err == nil && !strings.HasPrefix(rel, "..")
 }

@@ -3,6 +3,7 @@ package state
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -27,6 +28,10 @@ type StagedArticle struct {
 	ID       string       `yaml:"id,omitempty"`
 	State    ArticleState `yaml:"state"`
 	Checksum checksumPair `yaml:"checksum,omitempty"`
+	// Snapshot is the filename (under .hashnode/snapshots/) containing the
+	// frozen content captured at staging time. When present, `apply` will use
+	// this snapshot instead of reading the live file on disk.
+	Snapshot string `yaml:"snapshot,omitempty"`
 }
 
 type lockStaged struct {
@@ -114,12 +119,16 @@ func ComputeArticleState(a ArticleEntry) (ArticleState, string, string, error) {
 
 // IsStagingStale returns true if the current local checksum differs from the saved staged checksum
 func IsStagingStale(s StagedArticle, path string) bool {
-	info, err := os.Stat(path)
+	fsPath := filepath.FromSlash(path)
+	if !filepath.IsAbs(fsPath) {
+		fsPath = filepath.Join(ProjectRootOrCwd(), fsPath)
+	}
+	info, err := os.Stat(fsPath)
 	if err != nil || info.IsDir() {
 		// if local missing but staged expected local, consider stale
 		return s.Checksum.Local != ""
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(fsPath)
 	if err != nil {
 		return true
 	}
