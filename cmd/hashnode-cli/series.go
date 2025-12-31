@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/state"
@@ -20,44 +22,48 @@ var seriesCreateCmd = &cobra.Command{
 	Short: "Create a new series (declarative, idempotent by name)",
 	Run: func(cmd *cobra.Command, args []string) {
 		name, _ := cmd.Flags().GetString("name")
-		desc, _ := cmd.Flags().GetString("description")
 
 		if strings.TrimSpace(name) == "" {
 			fmt.Fprintln(os.Stderr, "❌ --name is required")
 			os.Exit(1)
 		}
 
-		// Load existing registry
-		list, err := state.LoadSeries()
+		// Load existing stage and check for existing series by name
+		st, err := state.LoadStage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to load series registry: %v\n", err)
+			fmt.Fprintf(os.Stderr, "❌ Failed to load stage: %v\n", err)
 			os.Exit(1)
 		}
-
-		// Check idempotency by exact name
-		for _, e := range list {
-			if e.Name == name {
-				fmt.Printf("No-op: series with name '%s' already exists (slug=%s)\n", e.Name, e.Slug)
+		for _, it := range st.Items {
+			if it.Type != state.TypeSeries || it.SeriesMeta == nil {
+				continue
+			}
+			if it.SeriesMeta.Title == name {
+				fmt.Printf("No-op: series with name '%s' already exists (slug=%s)\n", it.SeriesMeta.Title, it.SeriesMeta.Slug)
 				return
 			}
 		}
 
 		slug := state.Slugify(name)
-
-		entry := state.SeriesEntry{
-			SeriesID:    "",
-			Name:        name,
-			Slug:        slug,
-			Description: desc,
+		// create staged series entry
+		key := slug
+		si := state.StagedItem{
+			Type:     state.TypeSeries,
+			Key:      key,
+			Operation: state.OpModify,
+			StagedAt: time.Now(),
+			SeriesMeta: &state.SeriesMeta{
+				LocalID: uuid.NewString(),
+				Title:   name,
+				Slug:    slug,
+			},
 		}
-
-		list = append(list, entry)
-		if err := state.SaveSeries(list); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to save series registry: %v\n", err)
+		st.Items[key] = si
+		if err := state.SaveStage(st); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to save stage: %v\n", err)
 			os.Exit(1)
 		}
-
-		fmt.Printf("Created series '%s' (slug=%s) in .hashnode/series.yml\n", name, slug)
+		fmt.Printf("Created series '%s' (slug=%s) in staged metadata\n", name, slug)
 	},
 }
 

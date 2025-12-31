@@ -15,6 +15,7 @@ import (
 	"adil-adysh/hashnode-cli/internal/api"
 	"adil-adysh/hashnode-cli/internal/cli/output"
 	"adil-adysh/hashnode-cli/internal/config"
+	"adil-adysh/hashnode-cli/internal/diff"
 	"adil-adysh/hashnode-cli/internal/state"
 )
 
@@ -78,16 +79,33 @@ var importCmd = &cobra.Command{
 			sum.Series[slug] = state.SeriesEntry{SeriesID: n.Id, Name: n.Name, Slug: slug}
 		}
 
-		// Load existing article registry to allow merging and reuse of local ids/paths
-		existingRegs, regErr := state.LoadArticles()
-		regByPath := make(map[string]state.ArticleEntry)
-		regByRemote := make(map[string]state.ArticleEntry)
-		if regErr == nil {
-			for _, r := range existingRegs {
-				regByPath[state.NormalizePath(r.MarkdownPath)] = r
-				if r.RemotePostID != "" {
-					regByRemote[r.RemotePostID] = r
-				}
+		// Load existing staged metadata to allow merging and reuse of local ids/paths
+		st, serr := state.LoadStage()
+		if serr != nil {
+			return fmt.Errorf("failed to load stage: %w", serr)
+		}
+		regByPath := make(map[string]diff.RegistryEntry)
+		regByRemote := make(map[string]diff.RegistryEntry)
+		for _, it := range st.Items {
+			if it.Type != state.TypeArticle {
+				continue
+			}
+			var meta state.ArticleMeta
+			if it.ArticleMeta != nil {
+				meta = *it.ArticleMeta
+			}
+			ae := diff.RegistryEntry{
+				LocalID:      meta.LocalID,
+				Title:        meta.Title,
+				MarkdownPath: it.Key,
+				SeriesID:     meta.SeriesID,
+				RemotePostID: meta.RemotePostID,
+				Checksum:     it.Checksum,
+				LastSyncedAt: meta.LastSyncedAt,
+			}
+			regByPath[state.NormalizePath(ae.MarkdownPath)] = ae
+			if ae.RemotePostID != "" {
+				regByRemote[ae.RemotePostID] = ae
 			}
 		}
 
@@ -102,7 +120,7 @@ var importCmd = &cobra.Command{
 		}
 
 		// Iterate posts and write/merge files
-		var newRegsMap = make(map[string]state.ArticleEntry) // keyed by normalized path
+		var newRegsMap = make(map[string]diff.RegistryEntry) // keyed by normalized path
 		for _, edge := range resp.Publication.Posts.Edges {
 			post := edge.Node
 			title := post.Title
@@ -167,7 +185,7 @@ var importCmd = &cobra.Command{
 				}
 			}
 
-			entry := state.ArticleEntry{
+			entry := diff.RegistryEntry{
 				LocalID:      localID,
 				Title:        title,
 				MarkdownPath: outPath,
@@ -183,59 +201,51 @@ var importCmd = &cobra.Command{
 			output.Info("Imported %s -> %s\n", outPath, post.Id)
 		}
 
-		// Merge existing registry entries that were not part of this import
-		for _, r := range existingRegs {
-			np := state.NormalizePath(r.MarkdownPath)
+		// Merge existing staged entries that were not part of this import
+		for _, it := range st.Items {
+			if it.Type != state.TypeArticle {
+				continue
+			}
+			a := diff.RegistryEntry{}
+			if it.ArticleMeta != nil {
+				a.LocalID = it.ArticleMeta.LocalID
+				a.Title = it.ArticleMeta.Title
+				a.SeriesID = it.ArticleMeta.SeriesID
+				a.RemotePostID = it.ArticleMeta.RemotePostID
+				a.LastSyncedAt = it.ArticleMeta.LastSyncedAt
+			}
+			a.MarkdownPath = it.Key
+			a.Checksum = it.Checksum
+			np := state.NormalizePath(a.MarkdownPath)
 			if _, ok := newRegsMap[np]; !ok {
-				newRegsMap[np] = r
+				newRegsMap[np] = a
 			}
 		}
 
-		// Convert newRegsMap back to slice for SaveArticles
-		var articles []state.ArticleEntry
+		// Persist merged registry into staged metadata
 		for _, v := range newRegsMap {
-			articles = append(articles, v)
+			key := state.NormalizePath(v.MarkdownPath)
+			si := st.Items[key]
+			si.Type = state.TypeArticle
+			si.Key = key
+			si.Checksum = v.Checksum
+			if si.ArticleMeta == nil {
+				si.ArticleMeta = &state.ArticleMeta{}
+			}
+			si.ArticleMeta.LocalID = v.LocalID
+			si.ArticleMeta.Title = v.Title
+			si.ArticleMeta.SeriesID = v.SeriesID
+			si.ArticleMeta.RemotePostID = v.RemotePostID
+			si.ArticleMeta.LastSyncedAt = v.LastSyncedAt
+			st.Items[key] = si
+			sum.SetArticle(key, v.RemotePostID, v.Checksum)
 		}
 
-		// Save article registry and sum
-		if err := state.SaveArticles(articles); err != nil {
-			return fmt.Errorf("failed to save article registry: %w", err)
+		if err := state.SaveStage(st); err != nil {
+			return fmt.Errorf("failed to save stage: %w", err)
 		}
 		if err := state.SaveSum(sum); err != nil {
 			return fmt.Errorf("failed to save hashnode.sum: %w", err)
-		}
-
-		// Persist staged entries for imported files so they appear in `stage list`.
-		st, err := state.LoadStage()
-		if err != nil {
-			return fmt.Errorf("failed to load stage: %w", err)
-		}
-		if st.Items == nil {
-			st.Items = make(map[string]state.StagedItem)
-		}
-		for _, a := range articles {
-			np := state.NormalizePath(a.MarkdownPath)
-			// add staged item representing current local state
-			sType, localCS, _, serr := state.ComputeArticleState(a)
-			if serr != nil {
-				output.Info("ℹ️  could not compute staged state for %s: %v\n", a.MarkdownPath, serr)
-				continue
-			}
-			op := state.OpModify
-			if sType == state.ArticleStateDelete {
-				op = state.OpDelete
-			}
-			st.Items[np] = state.StagedItem{
-				Type:      state.TypeArticle,
-				Key:       np,
-				Checksum:  localCS,
-				Snapshot:  "",
-				Operation: op,
-				StagedAt:  time.Now(),
-			}
-		}
-		if err := state.SaveStage(st); err != nil {
-			return fmt.Errorf("failed to save stage: %w", err)
 		}
 
 		fmt.Println("import: completed")

@@ -133,35 +133,41 @@ var stageListCmd = &cobra.Command{
 
 		// use staged data persisted in `hashnode.stage`
 
-		// build merged entries map (sum + registry) for titles/metadata
+		// build merged entries map (sum + staged metadata) for titles/metadata
 		sum, _ := state.LoadSum()
-		registry, _ := state.LoadArticles()
-		regMap := make(map[string]state.ArticleEntry)
-		for _, a := range registry {
-			regMap[a.MarkdownPath] = a
-		}
-		mergedMap := map[string]state.ArticleEntry{}
+		mergedMap := map[string]struct{
+			Title string
+			LocalID string
+			Checksum string
+			RemotePostID string
+		}{}
 		if sum != nil {
 			if err := sum.ValidateAgainstBlog(); err == nil {
 				for path, sa := range sum.Articles {
-					entry := state.ArticleEntry{MarkdownPath: path, RemotePostID: sa.PostID, Checksum: sa.Checksum}
-					if r, ok := regMap[path]; ok {
-						entry.Title = r.Title
-						entry.LocalID = r.LocalID
-						entry.SeriesID = r.SeriesID
-						entry.LastSyncedAt = r.LastSyncedAt
+					mergedMap[path] = struct{Title,LocalID,Checksum,RemotePostID string}{
+						Title: "",
+						LocalID: "",
+						Checksum: sa.Checksum,
+						RemotePostID: sa.PostID,
 					}
-					mergedMap[path] = entry
-					delete(regMap, path)
-				}
-				for _, rem := range regMap {
-					mergedMap[rem.MarkdownPath] = rem
 				}
 			}
 		}
-		if len(mergedMap) == 0 {
-			for _, r := range registry {
-				mergedMap[r.MarkdownPath] = r
+		// overlay staged metadata for titles/local ids/checksums
+		for _, it := range st.Items {
+			if it.Type != state.TypeArticle {
+				continue
+			}
+			var title, localID string
+			if it.ArticleMeta != nil {
+				title = it.ArticleMeta.Title
+				localID = it.ArticleMeta.LocalID
+			}
+			mergedMap[it.Key] = struct{Title,LocalID,Checksum,RemotePostID string}{
+				Title: title,
+				LocalID: localID,
+				Checksum: it.Checksum,
+				RemotePostID: func() string { if it.ArticleMeta != nil { return it.ArticleMeta.RemotePostID }; return "" }(),
 			}
 		}
 
@@ -176,7 +182,7 @@ var stageListCmd = &cobra.Command{
 			case state.OpModify:
 				// compute semantic state if we have metadata
 				if e, ok := mergedMap[p]; ok {
-					stt, _, _, _ := state.ComputeArticleState(e)
+					stt, _, _, _ := state.ComputeArticleState(p, e.Checksum, e.RemotePostID)
 					switch stt {
 					case state.ArticleStateNew:
 						newItems = append(newItems, p)

@@ -32,7 +32,18 @@ type PlanItem struct {
 
 // FullDiff checks the status of tracked articles against the disk.
 // Used by `hnsync status` to show Modified/Deleted files.
-func FullDiff(articles []state.ArticleEntry) []PlanItem {
+// RegistryEntry is a lightweight representation of registry metadata used by diff
+type RegistryEntry struct {
+	LocalID      string
+	Title        string
+	MarkdownPath string
+	SeriesID     string
+	RemotePostID string
+	Checksum     string
+	LastSyncedAt string
+}
+
+func FullDiff(articles []RegistryEntry) []PlanItem {
 	var plan []PlanItem
 
 	for _, article := range articles {
@@ -91,18 +102,26 @@ func FullDiff(articles []state.ArticleEntry) []PlanItem {
 
 // GeneratePlan compares the STAGE against the LEDGER (Registry).
 // Used by `hnsync plan` and `hnsync apply`.
-func GeneratePlan(articles []state.ArticleEntry, st *state.Stage) []PlanItem {
+func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 	var plan []PlanItem
 
 	// ---------------------------------------------------------
 	// 1. OPTIMIZATION: Build Lookups ONCE (O(N))
 	// ---------------------------------------------------------
-	reg := make(map[string]state.ArticleEntry)
+	reg := make(map[string]RegistryEntry)
 	checksumToPath := make(map[string]string) // Key: Checksum, Value: Path
 
 	for _, a := range articles {
 		norm := state.NormalizePath(a.MarkdownPath)
-		reg[norm] = a
+		reg[norm] = RegistryEntry{
+			LocalID:      a.LocalID,
+			Title:        a.Title,
+			MarkdownPath: a.MarkdownPath,
+			SeriesID:     a.SeriesID,
+			RemotePostID: a.RemotePostID,
+			Checksum:     a.Checksum,
+			LastSyncedAt: a.LastSyncedAt,
+		}
 		// Only map valid synced articles for rename detection
 		if a.RemotePostID != "" && a.Checksum != "" {
 			checksumToPath[a.Checksum] = norm

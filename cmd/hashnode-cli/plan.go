@@ -17,55 +17,71 @@ var planCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("📋 Publish plan summary")
 
-		// Prefer deterministic sum file when present; merge with article registry for metadata
-		var merged []state.ArticleEntry
+		// Prefer deterministic sum file when present; merge with staged metadata for registry info
+		var merged []diff.RegistryEntry
 
 		sum, sumErr := state.LoadSum()
-		registry, regErr := state.LoadArticles()
+		st, serr := state.LoadStage()
+		if serr != nil {
+			fmt.Printf("❌ Error loading stage: %v\n", serr)
+			os.Exit(1)
+		}
 
-		// Build map from registry by path for quick merge
-		regMap := make(map[string]state.ArticleEntry)
-		if regErr == nil {
-			for _, a := range registry {
-				regMap[a.MarkdownPath] = a
+		// Build map from staged items by path for quick merge
+		regMap := make(map[string]diff.RegistryEntry)
+		for _, it := range st.Items {
+			if it.Type != state.TypeArticle {
+				continue
+			}
+			var meta state.ArticleMeta
+			if it.ArticleMeta != nil {
+				meta = *it.ArticleMeta
+			}
+			regMap[it.Key] = diff.RegistryEntry{
+				LocalID:      meta.LocalID,
+				Title:        meta.Title,
+				MarkdownPath: it.Key,
+				SeriesID:     meta.SeriesID,
+				RemotePostID: meta.RemotePostID,
+				Checksum:     it.Checksum,
+				LastSyncedAt: meta.LastSyncedAt,
 			}
 		}
 
 		if sumErr == nil {
 			if err := sum.ValidateAgainstBlog(); err != nil {
-				fmt.Printf("⚠️  hashnode.sum validation failed: %v; falling back to article registry\n", err)
+				fmt.Printf("⚠️  hashnode.sum validation failed: %v; falling back to staged registry\n", err)
 			} else {
-				// Merge sum entries with registry metadata (title, local id)
+				// Merge sum entries with staged metadata
 				for path, sa := range sum.Articles {
-					entry := state.ArticleEntry{
+					entry := diff.RegistryEntry{
 						MarkdownPath: path,
 						RemotePostID: sa.PostID,
 						Checksum:     sa.Checksum,
 					}
 					if reg, ok := regMap[path]; ok {
-						// copy metadata from registry
 						entry.Title = reg.Title
 						entry.LocalID = reg.LocalID
 						entry.SeriesID = reg.SeriesID
 						entry.LastSyncedAt = reg.LastSyncedAt
 					}
 					merged = append(merged, entry)
-					// mark consumed
 					delete(regMap, path)
 				}
-				// Any remaining registry entries (not present in sum) should be included
 				for _, rem := range regMap {
 					merged = append(merged, rem)
 				}
 			}
 		}
 
-		// If sum wasn't usable, but registry exists, use registry directly
+		// If sum wasn't usable, but staged registry exists, use staged registry directly
 		if len(merged) == 0 {
-			if regErr == nil {
-				merged = registry
+			if len(regMap) > 0 {
+				for _, v := range regMap {
+					merged = append(merged, v)
+				}
 			} else {
-				fmt.Printf("❌ Error loading article registry: %v\n", regErr)
+				fmt.Printf("❌ No registry data available (sum missing and no staged metadata)\n")
 				os.Exit(1)
 			}
 		}

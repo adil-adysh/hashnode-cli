@@ -48,12 +48,6 @@ var applyCmd = &cobra.Command{
 		httpClient := &http.Client{Transport: &authedTransport{token: cfg.Token, wrapped: http.DefaultTransport}}
 		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
 
-		// Load article registry
-		articles, err := state.LoadArticles()
-		if err != nil {
-			return fmt.Errorf("failed to load article registry: %w", err)
-		}
-
 		// Load stage and determine which paths are staged
 		st, err := state.LoadStage()
 		if err != nil {
@@ -66,6 +60,26 @@ var applyCmd = &cobra.Command{
 		}
 
 		// Compute plan from the Stage (intent) and Ledger (articles)
+		// Build a lightweight registry slice from staged metadata
+		var articles []diff.RegistryEntry
+		for _, it := range st.Items {
+			if it.Type != state.TypeArticle {
+				continue
+			}
+			var meta state.ArticleMeta
+			if it.ArticleMeta != nil {
+				meta = *it.ArticleMeta
+			}
+			articles = append(articles, diff.RegistryEntry{
+				LocalID:      meta.LocalID,
+				Title:        meta.Title,
+				MarkdownPath: it.Key,
+				SeriesID:     meta.SeriesID,
+				RemotePostID: meta.RemotePostID,
+				Checksum:     it.Checksum,
+				LastSyncedAt: meta.LastSyncedAt,
+			})
+		}
 		plan := diff.GeneratePlan(articles, st)
 
 		// Build set of staged include paths for quick reference
@@ -85,19 +99,10 @@ var applyCmd = &cobra.Command{
 			s, _ = state.NewSumFromBlog()
 		}
 
-		// Build lookup from existing registry
-		regByPath := make(map[string]state.ArticleEntry)
+		// Build lookup from existing staged registry metadata
+		regByPath := make(map[string]diff.RegistryEntry)
 		for _, a := range articles {
 			regByPath[state.NormalizePath(a.MarkdownPath)] = a
-		}
-
-		var updatedArticles []state.ArticleEntry
-
-		// Preserve unstaged entries as-is
-		for _, a := range articles {
-			if _, ok := stagedPaths[state.NormalizePath(a.MarkdownPath)]; !ok {
-				updatedArticles = append(updatedArticles, a)
-			}
 		}
 
 		// Apply plan items in order
@@ -129,7 +134,7 @@ var applyCmd = &cobra.Command{
 				fmt.Printf("Deleted remote post for %s -> %s\n", it.Path, remoteID)
 			case diff.ActionUpdate:
 				// find remote id and local metadata
-				var entry state.ArticleEntry
+				var entry diff.RegistryEntry
 				var ok bool
 				if entry, ok = regByPath[np]; !ok && it.OldPath != "" {
 					entry, ok = regByPath[state.NormalizePath(it.OldPath)]
@@ -168,7 +173,7 @@ var applyCmd = &cobra.Command{
 				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
-				// Determine checksum to store
+				// Determine checksum to store and update staged metadata
 				var checksum string
 				if si, ok := st.Items[np]; ok && si.Checksum != "" {
 					checksum = si.Checksum
@@ -176,10 +181,14 @@ var applyCmd = &cobra.Command{
 					checksum = state.ChecksumFromContent(contentBytes)
 				}
 				s.SetArticle(np, entry.RemotePostID, checksum)
-				entry.MarkdownPath = np
-				entry.Checksum = checksum
-				entry.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-				updatedArticles = append(updatedArticles, entry)
+				// update staged metadata
+				si := st.Items[np]
+				if si.ArticleMeta == nil {
+					si.ArticleMeta = &state.ArticleMeta{}
+				}
+				si.ArticleMeta.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+				si.Checksum = checksum
+				st.Items[np] = si
 				fmt.Printf("Updated post %s -> %s\n", it.Path, entry.RemotePostID)
 			case diff.ActionCreate:
 				// Prepare content
@@ -214,16 +223,26 @@ var applyCmd = &cobra.Command{
 				} else {
 					checksum = state.ChecksumFromContent(contentBytes)
 				}
-				entry := state.ArticleEntry{LocalID: localID, Title: it.Title, MarkdownPath: np, RemotePostID: newID, Checksum: checksum, LastSyncedAt: time.Now().UTC().Format(time.RFC3339)}
-				updatedArticles = append(updatedArticles, entry)
+				// persist into staged metadata
+				si := st.Items[np]
+				si.Type = state.TypeArticle
+				si.Key = np
+				si.Checksum = checksum
+				if si.ArticleMeta == nil {
+					si.ArticleMeta = &state.ArticleMeta{}
+				}
+				si.ArticleMeta.LocalID = localID
+				si.ArticleMeta.Title = it.Title
+				si.ArticleMeta.RemotePostID = newID
+				si.ArticleMeta.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+				st.Items[np] = si
 				s.SetArticle(np, newID, checksum)
 				fmt.Printf("Created post %s -> %s\n", it.Path, newID)
 			}
 		}
-
-		// Persist updated registries and sum
-		if err := state.SaveArticles(updatedArticles); err != nil {
-			return fmt.Errorf("failed to save article registry: %w", err)
+		// Persist updated stage and sum
+		if err := state.SaveStage(st); err != nil {
+			return fmt.Errorf("failed to save stage: %w", err)
 		}
 		if err := state.SaveSum(s); err != nil {
 			return fmt.Errorf("failed to save hashnode.sum: %w", err)

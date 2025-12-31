@@ -92,23 +92,24 @@ func SaveLock(l *LockData) error {
 
 // ComputeArticleState computes the semantic state for an article given known metadata.
 // It returns the state, local checksum, remote checksum (may be empty), and error.
-func ComputeArticleState(a ArticleEntry) (ArticleState, string, string, error) {
+// This variant accepts path and known remote metadata (checksum/post id).
+func ComputeArticleState(path string, knownChecksum string, remotePostID string) (ArticleState, string, string, error) {
 	// Determine local checksum
-	info, err := os.Stat(a.MarkdownPath)
+	info, err := os.Stat(path)
 	if err != nil || info.IsDir() {
 		// missing local file
-		if a.RemotePostID != "" {
-			return ArticleStateDelete, "", a.Checksum, nil
+		if remotePostID != "" {
+			return ArticleStateDelete, "", knownChecksum, nil
 		}
-		return ArticleStateNoop, "", a.Checksum, nil
+		return ArticleStateNoop, "", knownChecksum, nil
 	}
-	data, err := os.ReadFile(a.MarkdownPath)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return ArticleStateNoop, "", a.Checksum, fmt.Errorf("failed reading local file: %w", err)
+		return ArticleStateNoop, "", knownChecksum, fmt.Errorf("failed reading local file: %w", err)
 	}
 	local := ChecksumFromContent(data)
-	remote := a.Checksum
-	if a.RemotePostID == "" {
+	remote := knownChecksum
+	if remotePostID == "" {
 		return ArticleStateNew, local, remote, nil
 	}
 	if local != remote {
