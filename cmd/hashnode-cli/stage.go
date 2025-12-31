@@ -57,7 +57,7 @@ var stageAddCmd = &cobra.Command{
 		}
 
 		// file: stage single file
-		if err := state.StageFile(p); err != nil {
+		if err := state.StageAdd(p); err != nil {
 			return err
 		}
 		fmt.Printf("✔ 1 article staged (%s)\n", state.NormalizePath(p))
@@ -93,19 +93,12 @@ var stageRemoveCmd = &cobra.Command{
 			if dirPrefix != "./" && !strings.HasSuffix(dirPrefix, "/") {
 				dirPrefix = dirPrefix + "/"
 			}
-			var newInc []string
 			var removed []string
-			for _, i := range st.Include {
-				if dirPrefix == "./" || strings.HasPrefix(i, dirPrefix) {
-					removed = append(removed, i)
-					continue
+			for k := range st.Items {
+				if dirPrefix == "./" || strings.HasPrefix(k, dirPrefix) {
+					removed = append(removed, k)
+					delete(st.Items, k)
 				}
-				newInc = append(newInc, i)
-			}
-			st.Include = newInc
-			// add removed entries to exclude so they won't be restaged accidentally
-			for _, r := range removed {
-				st.Exclude = append(st.Exclude, r)
 			}
 			if err := state.SaveStage(st); err != nil {
 				return err
@@ -114,27 +107,17 @@ var stageRemoveCmd = &cobra.Command{
 			return nil
 		}
 
-		// file: remove single file from include and add to exclude
+		// file: unstage single file
 		norm := state.NormalizePath(p)
-		var newInc []string
-		removed := false
-		for _, i := range st.Include {
-			if i == norm {
-				removed = true
-				continue
+		if _, ok := st.Items[norm]; ok {
+			delete(st.Items, norm)
+			if err := state.SaveStage(st); err != nil {
+				return err
 			}
-			newInc = append(newInc, i)
-		}
-		st.Include = newInc
-		st.Exclude = append(st.Exclude, norm)
-		if err := state.SaveStage(st); err != nil {
-			return err
-		}
-		if removed {
 			fmt.Printf("✔ 1 article removed from stage (%s)\n", norm)
-		} else {
-			fmt.Printf("ℹ️  article not staged: %s\n", norm)
+			return nil
 		}
+		fmt.Printf("ℹ️  article not staged: %s\n", norm)
 		return nil
 	},
 }
@@ -187,34 +170,31 @@ var stageListCmd = &cobra.Command{
 		var updateItems []string
 		var noopItems []string
 		var deleteItems []string
-		for _, p := range st.Include {
-			// prefer persisted staged data
-			if s, ok := st.Staged[p]; ok {
-				switch s.State {
-				case state.ArticleStateNew:
-					newItems = append(newItems, p)
-				case state.ArticleStateUpdate:
+		for p, si := range st.Items {
+			// prefer staged item's declared operation
+			switch si.Operation {
+			case state.OpModify:
+				// compute semantic state if we have metadata
+				if e, ok := mergedMap[p]; ok {
+					stt, _, _, _ := state.ComputeArticleState(e)
+					switch stt {
+					case state.ArticleStateNew:
+						newItems = append(newItems, p)
+					case state.ArticleStateUpdate:
+						updateItems = append(updateItems, p)
+					case state.ArticleStateDelete:
+						deleteItems = append(deleteItems, p)
+					case state.ArticleStateNoop:
+						noopItems = append(noopItems, p)
+					}
+				} else {
+					// default to update for modify operations without metadata
 					updateItems = append(updateItems, p)
-				case state.ArticleStateDelete:
-					deleteItems = append(deleteItems, p)
-				case state.ArticleStateNoop:
-					noopItems = append(noopItems, p)
 				}
-				continue
-			}
-			// compute on-the-fly if no lock entry
-			if e, ok := mergedMap[p]; ok {
-				stt, _, _, _ := state.ComputeArticleState(e)
-				switch stt {
-				case state.ArticleStateNew:
-					newItems = append(newItems, p)
-				case state.ArticleStateUpdate:
-					updateItems = append(updateItems, p)
-				case state.ArticleStateDelete:
-					deleteItems = append(deleteItems, p)
-				case state.ArticleStateNoop:
-					noopItems = append(noopItems, p)
-				}
+			case state.OpDelete:
+				deleteItems = append(deleteItems, p)
+			default:
+				noopItems = append(noopItems, p)
 			}
 		}
 
@@ -270,18 +250,6 @@ var stageListCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		// show excluded paths
-		if len(st.Exclude) > 0 {
-			fmt.Printf("🚫 EXCLUDED (%d)\n", len(st.Exclude))
-			for _, p := range st.Exclude {
-				title := p
-				if e, ok := mergedMap[p]; ok && e.Title != "" {
-					title = e.Title
-				}
-				fmt.Printf("  - %s (%s)\n", title, p)
-			}
-			fmt.Println()
-		}
 		return nil
 	},
 }

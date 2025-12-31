@@ -73,8 +73,8 @@ var planCmd = &cobra.Command{
 		// Deterministic ordering by MarkdownPath
 		sort.Slice(merged, func(i, j int) bool { return merged[i].MarkdownPath < merged[j].MarkdownPath })
 
-		// Full diff from authoritative applied state -> working tree
-		plan := diff.GeneratePlan(merged)
+		// Full diff from authoritative applied state -> working tree (disk view)
+		diskPlan := diff.FullDiff(merged)
 
 		// Load stage and lock; trust lock staged state as source-of-truth for staged items
 		st, err := state.LoadStage()
@@ -83,53 +83,34 @@ var planCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Plan used by apply: computed from Stage + Ledger
+		stagedPlan := diff.GeneratePlan(merged, st)
+
 		var stagedItems []diff.PlanItem
 		var excludedItems []diff.PlanItem
 		var unstagedItems []diff.PlanItem
-		// build quick map from plan by path for metadata
+		// build quick map from diskPlan by path for metadata
 		planMap := make(map[string]diff.PlanItem)
-		for _, item := range plan {
+		for _, item := range diskPlan {
 			planMap[item.Path] = item
 		}
 
-		// For each included path, if there's a staged entry in lock, use that state.
-		for _, p := range st.Include {
-			if s, ok := st.Staged[p]; ok {
-				// map staged state to PlanItem.Type
-				var t diff.ActionType
-				switch s.State {
-				case state.ArticleStateNew:
-					t = diff.ActionCreate
-				case state.ArticleStateUpdate:
-					t = diff.ActionUpdate
-				case state.ArticleStateDelete:
-					t = diff.ActionDelete
-				case state.ArticleStateNoop:
-					t = diff.ActionSkip
-				default:
-					t = diff.ActionSkip
+		// Use stagedPlan entries for staged items, enrich with metadata from diskPlan when available.
+		for _, it := range stagedPlan {
+			if meta, ok := planMap[it.Path]; ok {
+				if it.Title == "" {
+					it.Title = meta.Title
 				}
-				base := planMap[p]
-				base.Type = t
-				// annotate reason from staged state
-				base.Reason = string(s.State)
-				stagedItems = append(stagedItems, base)
-				continue
 			}
-			// no staged entry; fall back to scanning plan
-			if it, ok := planMap[p]; ok {
-				stagedItems = append(stagedItems, it)
-				continue
+			if si, ok := st.Items[it.Path]; ok {
+				it.Reason = string(si.Operation)
 			}
+			stagedItems = append(stagedItems, it)
 		}
 
-		for _, item := range plan {
-			if st.IsExcluded(item.Path) {
-				excludedItems = append(excludedItems, item)
-				continue
-			}
-			// if not included, treat as unstaged
-			if !st.IsIncluded(item.Path) {
+		// classify diskPlan items as unstaged based on stage.Items
+		for _, item := range diskPlan {
+			if _, ok := st.Items[item.Path]; !ok {
 				unstagedItems = append(unstagedItems, item)
 			}
 		}
@@ -151,84 +132,145 @@ var planCmd = &cobra.Command{
 				noop++
 			}
 		}
-		excludedCount := len(excludedItems)
+		_ = len(excludedItems)
+
+		// Compute counts for unstaged (working) items as well
+		unstagedChanges := 0
+		unstagedNoop := 0
+		for _, it := range unstagedItems {
+			if it.Type == diff.ActionSkip {
+				unstagedNoop++
+			} else {
+				unstagedChanges++
+			}
+		}
 
 		// Summary (visible within first 5 lines)
 		if planShort {
 			// short mode
-			fmt.Printf("✔ %d staged | 🟡 %d updates | ⚪ %d no-op\n", len(stagedItems), updates, noop)
+			if len(stagedItems) == 0 {
+				// no staged items: fall back to disk view summary
+				diskUpdates := 0
+				diskNoop := 0
+				for _, it := range diskPlan {
+					if it.Type == diff.ActionSkip {
+						diskNoop++
+					} else {
+						diskUpdates++
+					}
+				}
+				if diskNoop > 0 {
+					fmt.Printf("✔ %d staged | 🟡 %d updates | ⚪ %d no-op\n", len(stagedItems), diskUpdates, diskNoop)
+				} else {
+					fmt.Printf("✔ %d staged | 🟡 %d updates\n", len(stagedItems), diskUpdates)
+				}
+				return
+			}
+			// staged items present
+			if noop > 0 {
+				if unstagedChanges > 0 {
+					fmt.Printf("✔ %d staged | 🟡 %d updates | ⚪ %d no-op | 🟠 %d working\n", len(stagedItems), updates, noop, unstagedChanges)
+				} else {
+					fmt.Printf("✔ %d staged | 🟡 %d updates | ⚪ %d no-op\n", len(stagedItems), updates, noop)
+				}
+			} else {
+				if unstagedChanges > 0 {
+					fmt.Printf("✔ %d staged | 🟡 %d updates | 🟠 %d working\n", len(stagedItems), updates, unstagedChanges)
+				} else {
+					fmt.Printf("✔ %d staged | 🟡 %d updates\n", len(stagedItems), updates)
+				}
+			}
 			return
 		}
 
-		fmt.Println()
-		fmt.Printf("🟡 Updates: %d\n", updates)
-		fmt.Printf("⚪ No-op: %d\n", noop)
-		if excludedCount > 0 {
-			fmt.Printf("🚫 Excluded: %d\n", excludedCount)
-		}
-		fmt.Println()
-		fmt.Println("Details:")
-
-		// Details grouped by outcome — only show create/update/delete (CRUD)
-		// Updates (CREATE/UPDATE)
-		if updates > 0 {
-			fmt.Println()
-			fmt.Println("🟡 UPDATE")
-			for _, it := range stagedItems {
-				if it.Type == diff.ActionCreate || it.Type == diff.ActionUpdate {
-					title := it.Title
-					if title == "" {
-						title = state.NormalizePath(it.Path)
-					}
-					// check for staleness
-					staleNote := ""
-					if s, ok := st.Staged[it.Path]; ok {
-						if state.IsStagingStale(s, it.Path) {
-							staleNote = "\n    ⚠️  Article changed after staging — re-stage required"
-						}
-					}
-					fmt.Printf("  - %s\n    Reason: %s%s\n", title, it.Reason, staleNote)
-				}
+		// Build grouped lists
+		var delItems, createItems, updateItemsList []diff.PlanItem
+		for _, it := range stagedItems {
+			switch it.Type {
+			case diff.ActionDelete:
+				delItems = append(delItems, it)
+			case diff.ActionCreate:
+				createItems = append(createItems, it)
+			case diff.ActionUpdate:
+				updateItemsList = append(updateItemsList, it)
 			}
 		}
 
-		// Deletes
-		if deletes > 0 {
-			fmt.Println()
-			fmt.Println("🔴 DELETE")
-			for _, it := range stagedItems {
-				if it.Type == diff.ActionDelete {
-					title := it.Title
-					if title == "" {
-						title = state.NormalizePath(it.Path)
+		totalChanges := len(delItems) + len(createItems) + len(updateItemsList)
+
+		// Header summary
+		fmt.Println()
+		fmt.Printf("📝  PLAN SUMMARY: %d changes to be applied\n", totalChanges)
+		fmt.Println("---------------------------------------------------")
+		fmt.Printf("   🔴  Deletes: %d\n", len(delItems))
+		fmt.Printf("   🟢  Creates: %d\n", len(createItems))
+		fmt.Printf("   🟡  Updates: %d\n", len(updateItemsList))
+		fmt.Println("---------------------------------------------------")
+		fmt.Println()
+
+		// helper to choose reason text
+		reasonFor := func(it diff.PlanItem) string {
+			if si, ok := st.Items[it.Path]; ok {
+				if si.Operation == state.OpDelete {
+					return "Marked for removal in stage"
+				}
+				if it.Type == diff.ActionCreate {
+					return "New draft (Local-only)"
+				}
+				if it.Type == diff.ActionUpdate {
+					if si.Snapshot != "" {
+						return "Content changed (Snapshot updated)"
 					}
-					staleNote := ""
-					if s, ok := st.Staged[it.Path]; ok {
-						if state.IsStagingStale(s, it.Path) {
-							staleNote = "\n    ⚠️  Article changed after staging — re-stage required"
-						}
-					}
-					fmt.Printf("  - %s\n    Reason: %s%s\n", title, it.Reason, staleNote)
+					return "Content changed"
 				}
 			}
+			if it.Reason != "" {
+				return it.Reason
+			}
+			return ""
 		}
 
-		// Excluded (only show if non-empty)
-		if excludedCount > 0 {
-			fmt.Println()
-			fmt.Println("🚫 EXCLUDED")
-			for _, it := range excludedItems {
+		// Deletions (first — high risk)
+		if len(delItems) > 0 {
+			fmt.Println("🔴  DELETIONS")
+			for _, it := range delItems {
 				title := it.Title
 				if title == "" {
 					title = state.NormalizePath(it.Path)
 				}
-				fmt.Printf("  - %s\n", title)
+				fmt.Printf("   %s (%s)\n", title, it.Path)
+				fmt.Printf("     └─ Reason: %s\n\n", reasonFor(it))
 			}
 		}
 
-		fmt.Println()
-		fmt.Println("Ready to publish:")
-		fmt.Println("  hashnode apply")
+		// Creations
+		if len(createItems) > 0 {
+			fmt.Println("🟢  CREATIONS")
+			for _, it := range createItems {
+				title := it.Title
+				if title == "" {
+					title = state.NormalizePath(it.Path)
+				}
+				fmt.Printf("   %s (%s)\n", title, it.Path)
+				fmt.Printf("     └─ Reason: %s\n\n", reasonFor(it))
+			}
+		}
+
+		// Updates
+		if len(updateItemsList) > 0 {
+			fmt.Println("🟡  UPDATES")
+			for _, it := range updateItemsList {
+				title := it.Title
+				if title == "" {
+					title = state.NormalizePath(it.Path)
+				}
+				fmt.Printf("   %s (%s)\n", title, it.Path)
+				fmt.Printf("     └─ Reason: %s\n\n", reasonFor(it))
+			}
+		}
+
+		fmt.Println("---------------------------------------------------")
+		fmt.Println("Run 'hashnode apply' to execute these changes.")
 	},
 }
 

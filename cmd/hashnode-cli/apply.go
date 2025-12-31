@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
@@ -51,35 +54,24 @@ var applyCmd = &cobra.Command{
 			return fmt.Errorf("failed to load article registry: %w", err)
 		}
 
-		// Compute full diff from applied state -> working tree
-		plan := diff.GeneratePlan(articles)
-
 		// Load stage and determine which paths are staged
 		st, err := state.LoadStage()
 		if err != nil {
 			return fmt.Errorf("failed to load stage: %w", err)
 		}
-		// If stage include is empty, warn and exit without changes
-		if len(st.Include) == 0 {
+		// If no staged items, warn and exit without changes
+		if len(st.Items) == 0 {
 			fmt.Println("No staged changes found in hashnode.stage; nothing to apply.")
 			return nil
 		}
 
-		// Build set of paths that have actionable plan (CREATE/UPDATE/DELETE)
-		plannedPaths := make(map[string]struct{})
-		for _, it := range plan {
-			if it.Type != diff.ActionSkip {
-				plannedPaths[state.NormalizePath(it.Path)] = struct{}{}
-			}
-		}
+		// Compute plan from the Stage (intent) and Ledger (articles)
+		plan := diff.GeneratePlan(articles, st)
 
-		// Intersect stage include with plannedPaths to produce final stagedPaths
+		// Build set of staged include paths for quick reference
 		stagedPaths := make(map[string]struct{})
-		for _, p := range st.Include {
-			np := state.NormalizePath(p)
-			if _, ok := plannedPaths[np]; ok {
-				stagedPaths[np] = struct{}{}
-			}
+		for p := range st.Items {
+			stagedPaths[state.NormalizePath(p)] = struct{}{}
 		}
 
 		// Load or construct sum
@@ -93,91 +85,144 @@ var applyCmd = &cobra.Command{
 			s, _ = state.NewSumFromBlog()
 		}
 
-		// Iterate articles and create/update/delete via API for staged files only. Build new registry slice.
-		var updatedArticles []state.ArticleEntry
+		// Build lookup from existing registry
+		regByPath := make(map[string]state.ArticleEntry)
 		for _, a := range articles {
-			// Determine if this path is staged
-			if _, ok := stagedPaths[state.NormalizePath(a.MarkdownPath)]; !ok {
-				// Not staged: leave unchanged in registry
-				updatedArticles = append(updatedArticles, a)
-				continue
-			}
-			// Try reading markdown content
-			contentBytes, err := os.ReadFile(a.MarkdownPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					// File missing locally
-					if a.RemotePostID != "" {
-						// Require explicit confirmation for destructive deletes
-						if !applyYes {
-							return fmt.Errorf("deletion required for %s (remote id=%s). Re-run with --yes to confirm deletions", a.MarkdownPath, a.RemotePostID)
-						}
-						// Delete remote post
-						resp, derr := api.DeletePost(context.Background(), client, a.RemotePostID)
-						if derr != nil {
-							return fmt.Errorf("delete failed for %s (remote id=%s): %w", a.MarkdownPath, a.RemotePostID, derr)
-						}
-						// If response exists, check success if present
-						if resp != nil {
-							// ignore resp.DeletePost.Success absent semantics; treat nil err as success
-						}
-						// Remove from sum
-						s.RemoveArticle(a.MarkdownPath)
-						fmt.Printf("Deleted remote post for %s -> %s\n", a.MarkdownPath, a.RemotePostID)
-						// Skip adding to updatedArticles to remove it from registry
-						continue
-					}
-					return fmt.Errorf("markdown file missing: %s", a.MarkdownPath)
-				}
-				return fmt.Errorf("failed to read %s: %w", a.MarkdownPath, err)
-			}
-			content := string(contentBytes)
+			regByPath[state.NormalizePath(a.MarkdownPath)] = a
+		}
 
-			if a.RemotePostID == "" {
-				// Create
-				input := api.PublishPostInput{
-					Title:           a.Title,
-					PublicationId:   s.Blog.PublicationID,
-					ContentMarkdown: content,
-				}
-				resp, err := api.PublishPost(context.Background(), client, input)
-				if err != nil {
-					return fmt.Errorf("publish failed for %s: %w", a.MarkdownPath, err)
-				}
-				if resp == nil || resp.PublishPost.Post.Id == "" {
-					return fmt.Errorf("publish returned no id for %s", a.MarkdownPath)
-				}
-				newID := resp.PublishPost.Post.Id
-				a.RemotePostID = newID
-				a.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-				s.SetArticle(a.MarkdownPath, newID, a.Checksum)
-				fmt.Printf("Created post %s -> %s\n", a.MarkdownPath, newID)
-				updatedArticles = append(updatedArticles, a)
-			} else {
-				// Update
-				contentPtr := content
-				input := api.UpdatePostInput{
-					Id:              a.RemotePostID,
-					ContentMarkdown: &contentPtr,
-				}
-				resp, err := api.UpdatePost(context.Background(), client, input)
-				if err != nil {
-					return fmt.Errorf("update failed for %s: %w", a.MarkdownPath, err)
-				}
-				if resp == nil || resp.UpdatePost.Post.Id == "" {
-					return fmt.Errorf("update returned no id for %s", a.MarkdownPath)
-				}
-				a.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-				s.SetArticle(a.MarkdownPath, a.RemotePostID, a.Checksum)
-				fmt.Printf("Updated post %s -> %s\n", a.MarkdownPath, a.RemotePostID)
+		var updatedArticles []state.ArticleEntry
+
+		// Preserve unstaged entries as-is
+		for _, a := range articles {
+			if _, ok := stagedPaths[state.NormalizePath(a.MarkdownPath)]; !ok {
 				updatedArticles = append(updatedArticles, a)
 			}
 		}
-		// Replace articles with updated registry (deleted entries removed)
-		articles = updatedArticles
+
+		// Apply plan items in order
+		for _, it := range plan {
+			np := state.NormalizePath(it.Path)
+			switch it.Type {
+			case diff.ActionSkip:
+				// nothing to do
+				continue
+			case diff.ActionDelete:
+				// delete remote post if exists
+				var remoteID string
+				if it.RemoteID != "" {
+					remoteID = it.RemoteID
+				} else if e, ok := regByPath[np]; ok {
+					remoteID = e.RemotePostID
+				}
+				if remoteID == "" {
+					// nothing to delete
+					continue
+				}
+				if !applyYes {
+					return fmt.Errorf("deletion required for %s (remote id=%s). Re-run with --yes to confirm deletions", it.Path, remoteID)
+				}
+				if _, derr := api.DeletePost(context.Background(), client, remoteID); derr != nil {
+					return fmt.Errorf("delete failed for %s (remote id=%s): %w", it.Path, remoteID, derr)
+				}
+				s.RemoveArticle(np)
+				fmt.Printf("Deleted remote post for %s -> %s\n", it.Path, remoteID)
+			case diff.ActionUpdate:
+				// find remote id and local metadata
+				var entry state.ArticleEntry
+				var ok bool
+				if entry, ok = regByPath[np]; !ok && it.OldPath != "" {
+					entry, ok = regByPath[state.NormalizePath(it.OldPath)]
+				}
+				if !ok {
+					// nothing to update (shouldn't happen)
+					continue
+				}
+				// staleness check using new staged item schema
+				if si, ok := st.Items[np]; ok {
+					if state.IsStagingItemStale(si, it.Path) {
+						if !applyYes {
+							return fmt.Errorf("staged content changed for %s; re-stage or rerun with --yes to force", it.Path)
+						}
+						fmt.Printf("warning: forcing apply despite staged content changes for %s\n", it.Path)
+					}
+				}
+				// Load content from snapshot when available, otherwise disk
+				var contentBytes []byte
+				var rerr error
+				if si, ok := st.Items[np]; ok && si.Snapshot != "" {
+					contentBytes, rerr = state.GetSnapshotContent(si.Snapshot)
+				} else {
+					fsPath := filepath.FromSlash(np)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					contentBytes, rerr = os.ReadFile(fsPath)
+				}
+				if rerr != nil {
+					return fmt.Errorf("failed to read content for %s: %w", it.Path, rerr)
+				}
+				content := string(contentBytes)
+				// perform update via API
+				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content}
+				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
+					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
+				}
+				// Determine checksum to store
+				var checksum string
+				if si, ok := st.Items[np]; ok && si.Checksum != "" {
+					checksum = si.Checksum
+				} else {
+					checksum = state.ChecksumFromContent(contentBytes)
+				}
+				s.SetArticle(np, entry.RemotePostID, checksum)
+				entry.MarkdownPath = np
+				entry.Checksum = checksum
+				entry.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+				updatedArticles = append(updatedArticles, entry)
+				fmt.Printf("Updated post %s -> %s\n", it.Path, entry.RemotePostID)
+			case diff.ActionCreate:
+				// Prepare content
+				var contentBytes []byte
+				var rerr error
+				if si, ok := st.Items[np]; ok && si.Snapshot != "" {
+					contentBytes, rerr = state.GetSnapshotContent(si.Snapshot)
+				} else {
+					fsPath := filepath.FromSlash(np)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					contentBytes, rerr = os.ReadFile(fsPath)
+				}
+				if rerr != nil {
+					return fmt.Errorf("failed to read staged file %s: %w", it.Path, rerr)
+				}
+				content := string(contentBytes)
+				input := api.PublishPostInput{Title: it.Title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
+				resp, perr := api.PublishPost(context.Background(), client, input)
+				if perr != nil {
+					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
+				}
+				if resp == nil || resp.PublishPost.Post.Id == "" {
+					return fmt.Errorf("publish returned no id for %s", it.Path)
+				}
+				newID := resp.PublishPost.Post.Id
+				localID := uuid.NewString()
+				var checksum string
+				if si, ok := st.Items[np]; ok && si.Checksum != "" {
+					checksum = si.Checksum
+				} else {
+					checksum = state.ChecksumFromContent(contentBytes)
+				}
+				entry := state.ArticleEntry{LocalID: localID, Title: it.Title, MarkdownPath: np, RemotePostID: newID, Checksum: checksum, LastSyncedAt: time.Now().UTC().Format(time.RFC3339)}
+				updatedArticles = append(updatedArticles, entry)
+				s.SetArticle(np, newID, checksum)
+				fmt.Printf("Created post %s -> %s\n", it.Path, newID)
+			}
+		}
 
 		// Persist updated registries and sum
-		if err := state.SaveArticles(articles); err != nil {
+		if err := state.SaveArticles(updatedArticles); err != nil {
 			return fmt.Errorf("failed to save article registry: %w", err)
 		}
 		if err := state.SaveSum(s); err != nil {

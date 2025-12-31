@@ -1,6 +1,52 @@
-version: 1
-include:
-    - ./2025/07/prompt-engineering-and-ai-empathy-why-your-words-matter.md
-    - ./2025/11/direnv-on-windows-with-powershell-fixing-github-cli-ghhost-issues-full-setup-guide.md
-    - ./2025/11/hacking-in-the-dark-making-kali-linux-orca-and-vmware-accessible.md
-exclude: []
+version: 2
+items:
+    2025/07/prompt-engineering-and-ai-empathy-why-your-words-matter.md:
+        type: ARTICLE
+        key: 2025/07/prompt-engineering-and-ai-empathy-why-your-words-matter.md
+        operation: DELETE
+        staged_at: 2025-12-31T21:45:06.0084947+05:30
+    2025/11/direnv-on-windows-with-powershell-fixing-github-cli-ghhost-issues-full-setup-guide.md:
+        type: ARTICLE
+        key: 2025/11/direnv-on-windows-with-powershell-fixing-github-cli-ghhost-issues-full-setup-guide.md
+        operation: DELETE
+        staged_at: 2025-12-31T21:45:06.0084947+05:30
+    2025/11/hacking-in-the-dark-making-kali-linux-orca-and-vmware-accessible.md:
+        type: ARTICLE
+        key: 2025/11/hacking-in-the-dark-making-kali-linux-orca-and-vmware-accessible.md
+        operation: DELETE
+        staged_at: 2025-12-31T21:45:06.0084947+05:30
+    README.md:
+        type: ARTICLE
+        key: README.md
+        checksum: 27b9d8dc6edb5af8742435d7aaaecbf0ef79ed121cd49a874580e06375cbfb1d
+        snapshot: 27b9d8dc6edb5af8742435d7aaaecbf0ef79ed121cd49a874580e06375cbfb1d.md
+        operation: MODIFY
+        staged_at: 2025-12-31T21:41:37.7811563+05:30
+    docs/design.md:
+        type: ARTICLE
+        key: docs/design.md
+        checksum: 6f8da1b95ee94081468db7211400c5d9f55cbeb4403a4cacaf248d9fe06d216d
+        snapshot: 6f8da1b95ee94081468db7211400c5d9f55cbeb4403a4cacaf248d9fe06d216d.md
+        operation: MODIFY
+        staged_at: 2025-12-31T21:41:37.7821888+05:30
+    docs/spike.md:
+        type: ARTICLE
+        key: docs/spike.md
+        checksum: 947fef0961a97cc2e72c032b15508308a815b61ce2cd74e18a22fdf40d14dd2c
+        snapshot: 947fef0961a97cc2e72c032b15508308a815b61ce2cd74e18a22fdf40d14dd2c.md
+        operation: MODIFY
+        staged_at: 2025-12-31T21:41:37.7827171+05:30
+    docs/todo.md:
+        type: ARTICLE
+        key: docs/todo.md
+        checksum: 7cdeba9e1815aabec463f5a57679883d2eaf4dc47cbcb43c056b294ec22b21f0
+        snapshot: 7cdeba9e1815aabec463f5a57679883d2eaf4dc47cbcb43c056b294ec22b21f0.md
+        operation: MODIFY
+        staged_at: 2025-12-31T21:41:37.783758+05:30
+    scripts/posts/test-kichen-post.md:
+        type: ARTICLE
+        key: scripts/posts/test-kichen-post.md
+        checksum: bd8b4dcdfacde2e16bb0f3d528088c491818971689048dc949148e43cab75806
+        snapshot: bd8b4dcdfacde2e16bb0f3d528088c491818971689048dc949148e43cab75806.md
+        operation: MODIFY
+        staged_at: 2025-12-31T21:41:37.7848021+05:30

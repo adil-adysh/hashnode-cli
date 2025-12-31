@@ -32,14 +32,26 @@ type StagedItem struct {
 	Snapshot  string    `yaml:"snapshot,omitempty"` // Filename in .hashnode/snapshots/
 	Operation Operation `yaml:"operation"`
 	StagedAt  time.Time `yaml:"staged_at"`
-	// Metadata previously stored in article registry. Keeping here
-	// allows the stage to be the single source of truth for both
-	// intent and persisted metadata.
+	// Typed metadata for known item types. Only one of these will be
+	// populated depending on `Type`.
+	ArticleMeta *ArticleMeta `yaml:"article_meta,omitempty"`
+	SeriesMeta  *SeriesMeta  `yaml:"series_meta,omitempty"`
+}
+
+// ArticleMeta stores registry-style metadata about an article.
+type ArticleMeta struct {
 	LocalID      string `yaml:"local_id,omitempty"`
 	Title        string `yaml:"title,omitempty"`
 	SeriesID     string `yaml:"series_id,omitempty"`
 	RemotePostID string `yaml:"remote_post_id,omitempty"`
 	LastSyncedAt string `yaml:"last_synced_at,omitempty"`
+}
+
+// SeriesMeta stores minimal metadata for series entries.
+type SeriesMeta struct {
+	LocalID string `yaml:"local_id,omitempty"`
+	Title   string `yaml:"title,omitempty"`
+	Slug    string `yaml:"slug,omitempty"`
 }
 
 // Stage represents the declarative staging area

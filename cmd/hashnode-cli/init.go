@@ -41,6 +41,14 @@ var initCmd = &cobra.Command{
 		if token == "" {
 			token = os.Getenv("HASHNODE_API_KEY")
 		}
+		// 1a. Try loading token from user config in home dir
+		if token == "" {
+			if cfg, err := config.Load(); err == nil {
+				if cfg != nil && cfg.Token != "" {
+					token = cfg.Token
+				}
+			}
+		}
 		if token == "" {
 			fmt.Print("🔑 Enter your Hashnode Personal Access Token: ")
 			token, _ = reader.ReadString('\n')

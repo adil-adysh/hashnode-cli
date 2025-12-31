@@ -1,12 +1,15 @@
 package diff
 
 import (
-	"adil-adysh/hashnode-cli/internal/log"
-	"adil-adysh/hashnode-cli/internal/state"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"adil-adysh/hashnode-cli/internal/log"
+	"adil-adysh/hashnode-cli/internal/state"
 )
 
+// ActionType defines the operation to be performed on the remote state.
 type ActionType string
 
 const (
@@ -16,122 +19,234 @@ const (
 	ActionDelete ActionType = "DELETE"
 )
 
+// PlanItem represents a single unit of work to be executed.
 type PlanItem struct {
-	Type   ActionType
-	ID     string // local_id from article.yml
-	Title  string
-	Path   string
-	Reason string
+	Type     ActionType
+	ID       string // Local ID from article.yml
+	Title    string
+	Path     string
+	Reason   string
+	OldPath  string // Source path if this is a RENAME
+	RemoteID string // The Hashnode ID (if known)
 }
 
-// GeneratePlan compares the authoritative article registry against the
-// current filesystem and produces a plan of actions. The registry is the
-// source of truth for identity; the file path is treated as metadata.
-func GeneratePlan(articles []state.ArticleEntry) []PlanItem {
+// FullDiff checks the status of tracked articles against the disk.
+// Used by `hnsync status` to show Modified/Deleted files.
+func FullDiff(articles []state.ArticleEntry) []PlanItem {
 	var plan []PlanItem
 
 	for _, article := range articles {
-		articlePath := article.MarkdownPath
+		// 1. Resolve Path
+		fsPath := resolveAbsPath(article.MarkdownPath)
 
-		// If the path is empty or not present on disk, decide whether this is
-		// a remote-deletion candidate (DELETE) or simply missing locally (SKIP).
-		info, statErr := os.Stat(articlePath)
-		if statErr != nil || info.IsDir() {
+		// 2. Check File Existence (Detect DELETE)
+		info, err := os.Stat(fsPath)
+		if err != nil || info.IsDir() {
 			if article.RemotePostID != "" {
 				plan = append(plan, PlanItem{
-					Type:   ActionDelete,
-					ID:     article.LocalID,
-					Title:  article.Title,
-					Path:   articlePath,
-					Reason: "Local markdown missing; remote post exists and may be removed",
+					Type:     ActionDelete,
+					ID:       article.LocalID,
+					Title:    article.Title,
+					Path:     article.MarkdownPath,
+					Reason:   "Local file missing; remote post exists",
+					RemoteID: article.RemotePostID,
 				})
 			} else {
 				plan = append(plan, PlanItem{
 					Type:   ActionSkip,
-					ID:     article.LocalID,
-					Title:  article.Title,
-					Path:   articlePath,
-					Reason: "Markdown file missing or inaccessible",
+					Path:   article.MarkdownPath,
+					Reason: "Draft file missing (local-only)",
 				})
 			}
 			continue
 		}
 
-		// Read file and compute checksum
-		content, readErr := os.ReadFile(articlePath)
-		if readErr != nil {
+		// 3. Read Content & Checksum
+		content, err := os.ReadFile(fsPath)
+		if err != nil {
 			plan = append(plan, PlanItem{
 				Type:   ActionSkip,
-				ID:     article.LocalID,
-				Title:  article.Title,
-				Path:   articlePath,
-				Reason: fmt.Sprintf("Failed to read file: %v", readErr),
+				Path:   article.MarkdownPath,
+				Reason: fmt.Sprintf("Error reading file: %v", err),
 			})
 			continue
 		}
 
 		currentChecksum := state.ChecksumFromContent(content)
 
-		// If not yet published remotely, create
-		if article.RemotePostID == "" {
-			plan = append(plan, PlanItem{
-				Type:   ActionCreate,
-				ID:     article.LocalID,
-				Title:  article.Title,
-				Path:   articlePath,
-				Reason: "Not published remotely",
-			})
-			continue
-		}
+		// 4. Determine Action (Pure Logic)
+		action, reason := determineAction(currentChecksum, article.Checksum, article.RemotePostID)
 
-		// If checksums differ -> update
-		if currentChecksum != article.Checksum {
-			plan = append(plan, PlanItem{
-				Type:   ActionUpdate,
-				ID:     article.LocalID,
-				Title:  article.Title,
-				Path:   articlePath,
-				Reason: "Local content differs from last synced checksum",
-			})
-			continue
-		}
-
-		// Otherwise up-to-date
 		plan = append(plan, PlanItem{
-			Type:   ActionSkip,
-			ID:     article.LocalID,
-			Title:  article.Title,
-			Path:   articlePath,
-			Reason: "Up to date",
+			Type:     action,
+			ID:       article.LocalID,
+			Title:    article.Title,
+			Path:     article.MarkdownPath,
+			Reason:   reason,
+			RemoteID: article.RemotePostID,
+		})
+	}
+	return plan
+}
+
+// GeneratePlan compares the STAGE against the LEDGER (Registry).
+// Used by `hnsync plan` and `hnsync apply`.
+func GeneratePlan(articles []state.ArticleEntry, st *state.Stage) []PlanItem {
+	var plan []PlanItem
+
+	// ---------------------------------------------------------
+	// 1. OPTIMIZATION: Build Lookups ONCE (O(N))
+	// ---------------------------------------------------------
+	reg := make(map[string]state.ArticleEntry)
+	checksumToPath := make(map[string]string) // Key: Checksum, Value: Path
+
+	for _, a := range articles {
+		norm := state.NormalizePath(a.MarkdownPath)
+		reg[norm] = a
+		// Only map valid synced articles for rename detection
+		if a.RemotePostID != "" && a.Checksum != "" {
+			checksumToPath[a.Checksum] = norm
+		}
+	}
+
+	// ---------------------------------------------------------
+	// 2. PROCESS STAGE (O(M)) - New schema: Stage.Items map
+	// ---------------------------------------------------------
+	for rawPath, stagedItem := range st.Items {
+		// Keys are stored normalized, but normalize again for safety
+		path := state.NormalizePath(rawPath)
+
+		// Handle explicit delete intent
+		if stagedItem.Operation == state.OpDelete {
+			entry, exists := reg[path]
+			if exists && entry.RemotePostID != "" {
+				plan = append(plan, PlanItem{
+					Type:     ActionDelete,
+					ID:       entry.LocalID,
+					Title:    entry.Title,
+					Path:     path,
+					RemoteID: entry.RemotePostID,
+					Reason:   "Marked for deletion (staged)",
+				})
+			} else {
+				plan = append(plan, PlanItem{Type: ActionSkip, Path: path, Reason: "Marked for deletion but not published remotely"})
+			}
+			continue
+		}
+
+		// Determine current checksum: prefer staged checksum, then snapshot, then disk.
+		var currentHash string
+		if stagedItem.Checksum != "" {
+			currentHash = stagedItem.Checksum
+		} else if stagedItem.Snapshot != "" {
+			if content, err := state.GetSnapshotContent(stagedItem.Snapshot); err == nil {
+				currentHash = state.ChecksumFromContent(content)
+			}
+		}
+		if currentHash == "" {
+			fsPath := resolveAbsPath(path)
+			if content, err := os.ReadFile(fsPath); err == nil {
+				currentHash = state.ChecksumFromContent(content)
+			} else {
+				plan = append(plan, PlanItem{Type: ActionSkip, Path: path, Reason: "Staged file missing from disk/snapshot"})
+				continue
+			}
+		}
+
+		// ---------------------------------------------------------
+		// 3. DECISION ENGINE
+		// ---------------------------------------------------------
+		entry, exists := reg[path]
+
+		// CASE A: NEW FILE (Not in Registry)
+		if !exists {
+			// RENAME HEURISTIC: Does this content exist elsewhere?
+			if oldPath, found := checksumToPath[currentHash]; found {
+				oldEntry := reg[oldPath]
+				plan = append(plan, PlanItem{
+					Type:     ActionUpdate, // Treat Rename as an Update to the pointer
+					Path:     path,
+					OldPath:  oldPath,
+					RemoteID: oldEntry.RemotePostID,
+					Title:    oldEntry.Title,
+					Reason:   fmt.Sprintf("Rename detected (content matches %s)", oldPath),
+				})
+			} else {
+				// Truly New
+				plan = append(plan, PlanItem{
+					Type:   ActionCreate,
+					Path:   path,
+					Reason: "New Article (Staged)",
+				})
+			}
+			continue
+		}
+
+		// CASE B: EXISTING FILE (In Registry)
+		action, reason := determineAction(currentHash, entry.Checksum, entry.RemotePostID)
+
+		// Override reason for plan clarity
+		if action == ActionCreate {
+			reason = "Draft Promotion (First Push)"
+		}
+
+		plan = append(plan, PlanItem{
+			Type:     action,
+			ID:       entry.LocalID,
+			Title:    entry.Title,
+			Path:     path,
+			RemoteID: entry.RemotePostID,
+			Reason:   reason,
 		})
 	}
 
 	return plan
 }
 
-// PrintPlanSummary prints a summary of the plan to the terminal
+// determineAction contains the pure business logic for state transitions.
+func determineAction(currentHash, knownHash, remoteID string) (ActionType, string) {
+	if remoteID == "" {
+		return ActionCreate, "Not published remotely"
+	}
+	if currentHash != knownHash {
+		return ActionUpdate, "Content changed"
+	}
+	return ActionSkip, "Up to date"
+}
+
+// resolveAbsPath handles absolute/relative path conversion safely
+func resolveAbsPath(p string) string {
+	fsPath := filepath.FromSlash(p)
+	if !filepath.IsAbs(fsPath) {
+		fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+	}
+	return fsPath
+}
+
+// PrintPlanSummary prints a user-friendly summary of the plan.
 func PrintPlanSummary(plan []PlanItem) {
-	// Print a concise header that helps users scan the output quickly.
 	log.Printf("📝 Execution Plan: %d changes detected\n", countChanges(plan))
 	log.Println("---------------------------------------------------")
 	for _, item := range plan {
+		var icon string
 		switch item.Type {
 		case ActionCreate:
-			log.Printf("🟢 [CREATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			icon = "🟢 [CREATE]"
 		case ActionUpdate:
-			log.Printf("🟡 [UPDATE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			icon = "🟡 [UPDATE]"
 		case ActionDelete:
-			log.Printf("🔴 [DELETE] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			icon = "🔴 [DELETE]"
 		case ActionSkip:
-			log.Printf("⚪ [SKIP] %s (%s)\n   Reason: %s\n", item.Title, item.Path, item.Reason)
+			icon = "⚪ [SKIP]  "
+		}
+
+		if item.Type != ActionSkip {
+			log.Printf("%s %s\n      Path: %s\n      Reason: %s\n", icon, item.Title, item.Path, item.Reason)
 		}
 	}
 	log.Println("---------------------------------------------------")
-	log.Println("Run 'hashnode apply' to execute these changes.")
 }
 
-// countChanges returns the number of actionable changes (create/update/delete)
-// and excludes SKIP items which are informational.
 func countChanges(plan []PlanItem) int {
 	n := 0
 	for _, item := range plan {
