@@ -236,7 +236,12 @@ var applyCmd = &cobra.Command{
 				if rerr != nil {
 					return fmt.Errorf("failed to read content for %s: %w", it.Path, rerr)
 				}
-				content := string(contentBytes)
+
+				fm, bodyBytes, berr := state.ExtractFrontmatter(contentBytes)
+				if berr != nil {
+					return fmt.Errorf("failed to parse frontmatter for %s: %w", it.Path, berr)
+				}
+				content := string(bodyBytes)
 
 				// Resolve title using centralized function
 				title, _ := state.ResolveTitleForPath(it.Path, s, st)
@@ -250,6 +255,7 @@ var applyCmd = &cobra.Command{
 				}
 				pubID := s.Blog.PublicationID
 				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content, Title: &title, PublicationId: &pubID}
+				applyFrontmatterToUpdateInput(&input, fm)
 				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
@@ -292,7 +298,12 @@ var applyCmd = &cobra.Command{
 				if rerr != nil {
 					return fmt.Errorf("failed to read staged file %s: %w", it.Path, rerr)
 				}
-				content := string(contentBytes)
+
+				fm, bodyBytes, berr := state.ExtractFrontmatter(contentBytes)
+				if berr != nil {
+					return fmt.Errorf("failed to parse frontmatter for %s: %w", it.Path, berr)
+				}
+				content := string(bodyBytes)
 
 				// Resolve title using centralized function
 				title, _ := state.ResolveTitleForPath(it.Path, s, st)
@@ -301,6 +312,7 @@ var applyCmd = &cobra.Command{
 				}
 
 				input := api.PublishPostInput{Title: title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
+				applyFrontmatterToPublishInput(&input, fm)
 				resp, perr := api.PublishPost(context.Background(), client, input)
 				if perr != nil {
 					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
@@ -367,4 +379,170 @@ var applyDryRun bool
 func init() {
 	applyCmd.Flags().BoolVarP(&applyYes, "yes", "y", false, "Confirm and perform destructive deletions (required to remove remote posts)")
 	applyCmd.Flags().BoolVar(&applyDryRun, "dry-run", false, "Preview apply without calling the API or writing state")
+}
+
+func applyFrontmatterToPublishInput(input *api.PublishPostInput, fm *state.Frontmatter) {
+	if fm == nil {
+		return
+	}
+
+	if fm.Subtitle != "" {
+		input.Subtitle = strPtr(fm.Subtitle)
+	}
+	if fm.Slug != "" {
+		input.Slug = strPtr(fm.Slug)
+	}
+	if fm.Canonical != "" {
+		input.OriginalArticleURL = strPtr(fm.Canonical)
+	}
+	if fm.PublishedAt != nil {
+		input.PublishedAt = fm.PublishedAt
+	}
+	if fm.DisableComments != nil {
+		input.DisableComments = fm.DisableComments
+	}
+
+	if fm.CoverImageURL != "" || fm.CoverImageAttribution != "" || fm.CoverImagePhotographer != "" || fm.CoverImageHideAttribution || fm.CoverImageStickBottom {
+		input.CoverImageOptions = &api.CoverImageOptionsInput{
+			CoverImageURL:            strPtrOrNil(fm.CoverImageURL),
+			CoverImageAttribution:    strPtrOrNil(fm.CoverImageAttribution),
+			CoverImagePhotographer:   strPtrOrNil(fm.CoverImagePhotographer),
+			IsCoverAttributionHidden: boolPtrOrNil(fm.CoverImageHideAttribution),
+			StickCoverToBottom:       boolPtrOrNil(fm.CoverImageStickBottom),
+		}
+	}
+	if fm.BannerImageURL != "" {
+		input.BannerImageOptions = &api.BannerImageOptionsInput{BannerImageURL: strPtr(fm.BannerImageURL)}
+	}
+
+	if fm.MetaTitle != "" || fm.MetaDescription != "" || fm.MetaImage != "" {
+		input.MetaTags = &api.MetaTagsInput{
+			Title:       strPtrOrNil(fm.MetaTitle),
+			Description: strPtrOrNil(fm.MetaDescription),
+			Image:       strPtrOrNil(fm.MetaImage),
+		}
+	}
+
+	if len(fm.Tags) > 0 {
+		for _, t := range fm.Tags {
+			tag := t
+			input.Tags = append(input.Tags, api.PublishPostTagInput{Name: &tag})
+		}
+	}
+
+	if fm.PublishAs != "" {
+		input.PublishAs = strPtr(fm.PublishAs)
+	}
+	if len(fm.CoAuthors) > 0 {
+		input.CoAuthors = append(input.CoAuthors, fm.CoAuthors...)
+	}
+
+	if fm.EnableToc != nil || fm.Newsletter != nil || fm.Delisted != nil || fm.Scheduled != nil || fm.SlugOverridden != nil || fm.Slug != "" {
+		settings := api.PublishPostSettingsInput{}
+		if fm.EnableToc != nil {
+			settings.EnableTableOfContent = fm.EnableToc
+		}
+		if fm.Newsletter != nil {
+			settings.IsNewsletterActivated = fm.Newsletter
+		}
+		if fm.Delisted != nil {
+			settings.Delisted = fm.Delisted
+		}
+		if fm.Scheduled != nil {
+			settings.Scheduled = fm.Scheduled
+		}
+		if fm.SlugOverridden != nil {
+			settings.SlugOverridden = fm.SlugOverridden
+		} else if fm.Slug != "" {
+			settings.SlugOverridden = boolPtr(true)
+		}
+		input.Settings = &settings
+	}
+}
+
+func applyFrontmatterToUpdateInput(input *api.UpdatePostInput, fm *state.Frontmatter) {
+	if fm == nil {
+		return
+	}
+
+	if fm.Subtitle != "" {
+		input.Subtitle = strPtr(fm.Subtitle)
+	}
+	if fm.Slug != "" {
+		input.Slug = strPtr(fm.Slug)
+	}
+	if fm.Canonical != "" {
+		input.OriginalArticleURL = strPtr(fm.Canonical)
+	}
+	if fm.PublishedAt != nil {
+		input.PublishedAt = fm.PublishedAt
+	}
+
+	if fm.CoverImageURL != "" || fm.CoverImageAttribution != "" || fm.CoverImagePhotographer != "" || fm.CoverImageHideAttribution || fm.CoverImageStickBottom {
+		input.CoverImageOptions = &api.CoverImageOptionsInput{
+			CoverImageURL:            strPtrOrNil(fm.CoverImageURL),
+			CoverImageAttribution:    strPtrOrNil(fm.CoverImageAttribution),
+			CoverImagePhotographer:   strPtrOrNil(fm.CoverImagePhotographer),
+			IsCoverAttributionHidden: boolPtrOrNil(fm.CoverImageHideAttribution),
+			StickCoverToBottom:       boolPtrOrNil(fm.CoverImageStickBottom),
+		}
+	}
+	if fm.BannerImageURL != "" {
+		input.BannerImageOptions = &api.BannerImageOptionsInput{BannerImageURL: strPtr(fm.BannerImageURL)}
+	}
+
+	if fm.MetaTitle != "" || fm.MetaDescription != "" || fm.MetaImage != "" {
+		input.MetaTags = &api.MetaTagsInput{
+			Title:       strPtrOrNil(fm.MetaTitle),
+			Description: strPtrOrNil(fm.MetaDescription),
+			Image:       strPtrOrNil(fm.MetaImage),
+		}
+	}
+
+	if len(fm.Tags) > 0 {
+		for _, t := range fm.Tags {
+			tag := t
+			input.Tags = append(input.Tags, api.PublishPostTagInput{Name: &tag})
+		}
+	}
+
+	if fm.PublishAs != "" {
+		input.PublishAs = strPtr(fm.PublishAs)
+	}
+	if len(fm.CoAuthors) > 0 {
+		input.CoAuthors = append(input.CoAuthors, fm.CoAuthors...)
+	}
+
+	if fm.EnableToc != nil || fm.Delisted != nil || fm.DisableComments != nil || fm.PinToBlog != nil {
+		settings := api.UpdatePostSettingsInput{}
+		if fm.EnableToc != nil {
+			settings.IsTableOfContentEnabled = fm.EnableToc
+		}
+		if fm.Delisted != nil {
+			settings.Delisted = fm.Delisted
+		}
+		if fm.DisableComments != nil {
+			settings.DisableComments = fm.DisableComments
+		}
+		if fm.PinToBlog != nil {
+			settings.PinToBlog = fm.PinToBlog
+		}
+		input.Settings = &settings
+	}
+}
+
+func strPtr(v string) *string { return &v }
+func strPtrOrNil(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+func boolPtr(v bool) *bool { return &v }
+func boolPtrOrNil(v bool) *bool {
+	if !v {
+		return nil
+	}
+	return &v
 }

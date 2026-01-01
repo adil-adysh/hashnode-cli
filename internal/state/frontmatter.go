@@ -6,47 +6,108 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
+// Frontmatter captures supported YAML fields for posts.
+// Only fields present in the markdown will be set (zero values remain nil).
+type Frontmatter struct {
+	Title                     string     `yaml:"title"`
+	Subtitle                  string     `yaml:"subtitle"`
+	Slug                      string     `yaml:"slug"`
+	Tags                      []string   `yaml:"tags"`
+	Canonical                 string     `yaml:"canonical"`
+	CoverImageURL             string     `yaml:"cover_image_url"`
+	CoverImageAttribution     string     `yaml:"cover_image_attribution"`
+	CoverImagePhotographer    string     `yaml:"cover_image_photographer"`
+	CoverImageStickBottom     bool       `yaml:"cover_image_stick_bottom"`
+	CoverImageHideAttribution bool       `yaml:"cover_image_hide_attribution"`
+	BannerImageURL            string     `yaml:"banner_image_url"`
+	DisableComments           *bool      `yaml:"disable_comments"`
+	PublishedAt               *time.Time `yaml:"published_at"`
+	MetaTitle                 string     `yaml:"meta_title"`
+	MetaDescription           string     `yaml:"meta_description"`
+	MetaImage                 string     `yaml:"meta_image"`
+	PublishAs                 string     `yaml:"publish_as"`
+	CoAuthors                 []string   `yaml:"co_authors"`
+	Series                    string     `yaml:"series"`
+	EnableToc                 *bool      `yaml:"toc"`
+	Newsletter                *bool      `yaml:"newsletter"`
+	Delisted                  *bool      `yaml:"delisted"`
+	Scheduled                 *bool      `yaml:"scheduled"`
+	SlugOverridden            *bool      `yaml:"slug_overridden"`
+	PinToBlog                 *bool      `yaml:"pin_to_blog"`
+}
+
 // ParseTitleFromFrontmatter extracts the `title` field from YAML frontmatter
 // if present. It returns empty string when no title is found.
 func ParseTitleFromFrontmatter(content []byte) (string, error) {
-	// Be forgiving about leading whitespace and CRLFs before/after the delimiters.
-	// Trim leading whitespace so frontmatter like "\n---" is accepted.
-	s := bytes.TrimLeft(content, " \t\r\n")
-	if !bytes.HasPrefix(s, []byte("---")) {
+	fm, _, err := ExtractFrontmatter(content)
+	if err != nil {
+		return "", err
+	}
+	if fm == nil {
 		return "", nil
 	}
-	// Skip the opening '---'
+	return strings.TrimSpace(fm.Title), nil
+}
+
+// StripFrontmatter removes YAML frontmatter from markdown content and returns the body.
+// If no frontmatter is present, it returns the original content. Invalid frontmatter
+// yields an error so callers can prevent posting malformed payloads.
+// ExtractFrontmatter returns the parsed frontmatter (if present) and the markdown body without frontmatter.
+// When no frontmatter exists, fm is nil and body is the original content.
+func ExtractFrontmatter(content []byte) (*Frontmatter, []byte, error) {
+	s := bytes.TrimLeft(content, " \t\r\n")
+	if !bytes.HasPrefix(s, []byte("---")) {
+		return nil, content, nil
+	}
+
+	// Skip opening delimiter
 	s = s[len("---"):]
-	// Drop an optional CRLF or LF immediately after the opening marker
 	if bytes.HasPrefix(s, []byte("\r\n")) {
 		s = s[2:]
 	} else if bytes.HasPrefix(s, []byte("\n")) {
 		s = s[1:]
 	}
-	// find closing delimiter (preceded by a newline)
-	idx := bytes.Index(s, []byte("\n---"))
+
+	endDelim := []byte("\n---")
+	idx := bytes.Index(s, endDelim)
+	consumed := len(endDelim)
 	if idx < 0 {
-		// try CRLF variant
-		idx = bytes.Index(s, []byte("\r\n---"))
+		endDelim = []byte("\r\n---")
+		idx = bytes.Index(s, endDelim)
+		consumed = len(endDelim)
 		if idx < 0 {
-			return "", nil
+			return nil, content, fmt.Errorf("frontmatter end delimiter not found")
 		}
 	}
-	fm := s[:idx]
-	var m map[string]interface{}
-	if err := yaml.Unmarshal(fm, &m); err != nil {
-		return "", fmt.Errorf("invalid frontmatter: %w", err)
+
+	fmBytes := s[:idx]
+	var fm Frontmatter
+	if err := yaml.Unmarshal(fmBytes, &fm); err != nil {
+		return nil, content, fmt.Errorf("invalid frontmatter: %w", err)
 	}
-	if t, ok := m["title"]; ok {
-		if s, ok := t.(string); ok {
-			return strings.TrimSpace(s), nil
-		}
+
+	body := s[idx+consumed:]
+	// Trim a single leading newline after the closing delimiter
+	if bytes.HasPrefix(body, []byte("\r\n")) {
+		body = body[2:]
+	} else if bytes.HasPrefix(body, []byte("\n")) {
+		body = body[1:]
 	}
-	return "", nil
+	// Drop any remaining leading blank lines
+	body = bytes.TrimLeft(body, "\r\n")
+
+	return &fm, body, nil
+}
+
+// StripFrontmatter removes YAML frontmatter and returns the body (compat helper).
+func StripFrontmatter(content []byte) ([]byte, error) {
+	_, body, err := ExtractFrontmatter(content)
+	return body, err
 }
 
 // ResolveTitleForPath resolves the title for a file path.
