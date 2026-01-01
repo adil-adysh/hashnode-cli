@@ -46,6 +46,7 @@ scoops:
       name: scoop-bucket
       branch: main
       token: "{{ .Env.GORELEASER_GITHUB_TOKEN }}"
+    directory: bucket
     commit_author:
       name: goreleaser
       email: noreply@goreleaser.com
