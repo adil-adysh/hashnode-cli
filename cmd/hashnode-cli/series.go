@@ -48,10 +48,10 @@ var seriesCreateCmd = &cobra.Command{
 		// create staged series entry
 		key := slug
 		si := state.StagedItem{
-			Type:     state.TypeSeries,
-			Key:      key,
+			Type:      state.TypeSeries,
+			Key:       key,
 			Operation: state.OpModify,
-			StagedAt: time.Now(),
+			StagedAt:  time.Now(),
 			SeriesMeta: &state.SeriesMeta{
 				LocalID: uuid.NewString(),
 				Title:   name,

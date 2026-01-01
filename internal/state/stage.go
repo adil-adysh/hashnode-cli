@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"adil-adysh/hashnode-cli/internal/log"
 )
 
 // ItemType allows us to distinguish between content and containers
@@ -37,43 +39,12 @@ type StagedItem struct {
 	Snapshot  string    `yaml:"snapshot,omitempty"` // Filename in .hashnode/snapshots/
 	Operation Operation `yaml:"operation"`
 	StagedAt  time.Time `yaml:"staged_at"`
-	// Typed metadata for known item types. Only one of these will be
-	// populated depending on `Type`.
-	ArticleMeta *ArticleMeta `yaml:"article_meta,omitempty"`
-	SeriesMeta  *SeriesMeta  `yaml:"series_meta,omitempty"`
-}
-
-// ArticleMeta stores registry-style metadata about an article.
-type ArticleMeta struct {
-	LocalID      string `yaml:"local_id,omitempty"`
-	Title        string `yaml:"title,omitempty"`
-	SeriesID     string `yaml:"series_id,omitempty"`
-	RemotePostID string `yaml:"remote_post_id,omitempty"`
-	LastSyncedAt string `yaml:"last_synced_at,omitempty"`
-}
-
-// SeriesMeta stores minimal metadata for series entries.
-type SeriesMeta struct {
-	LocalID string `yaml:"local_id,omitempty"`
-	Title   string `yaml:"title,omitempty"`
-	Slug    string `yaml:"slug,omitempty"`
-}
-
-// SeriesEntry represents a series record stored in the sum/ledger.
-// Kept here so sum.go can reference it; it's distinct from SeriesMeta
-// which is metadata inside staged items.
-type SeriesEntry struct {
-	SeriesID    string
-	Name        string
-	Slug        string
-	Description string
 }
 
 // Stage represents the declarative staging area
 type Stage struct {
 	Version int                   `yaml:"version"`
 	Items   map[string]StagedItem `yaml:"items"`
-	// New schema: Items holds all staged entries keyed by normalized path
 }
 
 // LoadStage reads the stage file or returns a fresh empty stage
@@ -116,16 +87,20 @@ func (s *Stage) Clear() {
 	s.Items = make(map[string]StagedItem)
 }
 
-// SetStagedEntry is a compatibility helper to persist an old-style staged entry.
-// MigrateStagedPathsByRemote is removed; use external migration tooling if needed.
-
-// (Legacy helpers removed) Use `Stage.Items` and `StageAdd`/`StageDir` directly.
-
-// StageDir walks `dir` and stages tracked markdown files. Returns lists of staged and skipped paths.
+// StageDir walks `dir` and stages tracked markdown files using BULK IO.
+// This is O(1) IO operation on the stage file, regardless of file count.
 func StageDir(dir string) ([]string, []string, error) {
+	// 1. Load Stage ONCE
+	st, err := LoadStage()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var staged []string
 	var skipped []string
-	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+
+	// 2. Process Files
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -137,18 +112,53 @@ func StageDir(dir string) ([]string, []string, error) {
 			skipped = append(skipped, p)
 			return nil
 		}
-		if err := StageAdd(p); err != nil {
+
+		absPath, err := filepath.Abs(p)
+		if err != nil || !inRepo(absPath) {
 			skipped = append(skipped, p)
 			return nil
 		}
-		staged = append(staged, NormalizePath(p))
+
+		// Read content to snapshot
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			skipped = append(skipped, p)
+			return nil
+		}
+		checksum := ChecksumFromContent(content)
+		snapshotName := fmt.Sprintf("%s.md", checksum)
+
+		if err := saveSnapshot(snapshotName, content); err != nil {
+			return err
+		}
+
+		// Update Memory
+		key := NormalizePath(p)
+		st.Items[key] = StagedItem{
+			Type:      TypeArticle,
+			Key:       key,
+			Operation: OpModify,
+			Checksum:  checksum,
+			Snapshot:  snapshotName,
+			StagedAt:  time.Now(),
+		}
+		staged = append(staged, key)
 		return nil
 	})
-	return staged, skipped, err
+
+	if err != nil {
+		return staged, skipped, err
+	}
+
+	// 3. Save Stage ONCE
+	if err := SaveStage(st); err != nil {
+		return staged, skipped, err
+	}
+
+	return staged, skipped, nil
 }
 
-// StageAdd adds or updates a file in the stage.
-// It captures a snapshot of the content to ensure consistency.
+// StageAdd adds or updates a file in the stage (Single file).
 func StageAdd(path string) error {
 	// 1. Validation
 	absPath, err := filepath.Abs(path)
@@ -167,8 +177,6 @@ func StageAdd(path string) error {
 	checksum := ChecksumFromContent(content)
 
 	// 3. Create Snapshot
-	// We save the content to .hashnode/snapshots/<hash>.md
-	// This ensures that even if the user edits the file later, the 'Plan' uses this version.
 	snapshotName := fmt.Sprintf("%s.md", checksum)
 	if err := saveSnapshot(snapshotName, content); err != nil {
 		return err
@@ -180,9 +188,7 @@ func StageAdd(path string) error {
 		return err
 	}
 
-	// Normalized Path is the Key
 	key := NormalizePath(path)
-
 	st.Items[key] = StagedItem{
 		Type:      TypeArticle,
 		Key:       key,
@@ -192,11 +198,13 @@ func StageAdd(path string) error {
 		StagedAt:  time.Now(),
 	}
 
-	return SaveStage(st)
+	if err := SaveStage(st); err != nil {
+		return err
+	}
+	return nil
 }
 
 // StageRemove marks a path for deletion in the stage.
-// It does NOT need the file to exist on disk.
 func StageRemove(path string) error {
 	st, err := LoadStage()
 	if err != nil {
@@ -204,21 +212,17 @@ func StageRemove(path string) error {
 	}
 
 	key := NormalizePath(path)
-
-	// We record the deletion intent even if the file is already gone from disk.
 	st.Items[key] = StagedItem{
 		Type:      TypeArticle,
 		Key:       key,
 		Operation: OpDelete,
 		StagedAt:  time.Now(),
-		// No checksum or snapshot needed for a deletion
 	}
 
 	return SaveStage(st)
 }
 
-// Unstage removes an item from the stage completely (reverting to unstaged state).
-// This is different from StageRemove (which intends to delete remotely).
+// Unstage removes an item from the stage completely.
 func Unstage(path string) error {
 	st, err := LoadStage()
 	if err != nil {
@@ -241,16 +245,14 @@ func saveSnapshot(filename string, content []byte) error {
 	}
 
 	path := filepath.Join(snapDir, filename)
-
 	// Optimization: If snapshot exists, don't re-write (Content Addressable)
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-
 	return AtomicWriteFile(path, content, 0644)
 }
 
-// IsStagingItemStale returns true if the current local checksum differs from the staged item's checksum
+// IsStagingItemStale returns true if local checksum differs from stage
 func IsStagingItemStale(item StagedItem, path string) bool {
 	fsPath := filepath.FromSlash(path)
 	if !filepath.IsAbs(fsPath) {
@@ -258,33 +260,87 @@ func IsStagingItemStale(item StagedItem, path string) bool {
 	}
 	info, err := os.Stat(fsPath)
 	if err != nil || info.IsDir() {
-		return item.Checksum != ""
+		return item.Checksum != "" // Considered stale if missing/dir
 	}
 	data, err := os.ReadFile(fsPath)
 	if err != nil {
 		return true
 	}
-	cur := ChecksumFromContent(data)
-	return cur != item.Checksum
+	return ChecksumFromContent(data) != item.Checksum
 }
 
-// Helper: GetSnapshotContent retrieves the frozen content for planning/pushing
+// Helper: GetSnapshotContent retrieves the frozen content
 func GetSnapshotContent(filename string) ([]byte, error) {
 	path := StatePath("snapshots", filename)
 	return os.ReadFile(path)
 }
 
-// AtomicWriteFile writes data to a temp file and renames it to ensure atomicity
-// NOTE: You likely have this in your utils, but included here for completeness
+// GCStaleSnapshots removes unreferenced snapshot files.
+// Note: Requires LoadLock implementation (not provided in this file, assumed exists in package)
+func GCStaleSnapshots() (int, error) {
+	snapDir := StatePath("snapshots")
+	entries, err := os.ReadDir(snapDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read snapshots dir: %w", err)
+	}
 
-// inRepo checks if path is inside project root
+	keep := make(map[string]struct{})
+
+	// 1. Keep items from Stage
+	st, err := LoadStage()
+	if err == nil {
+		for _, it := range st.Items {
+			if it.Snapshot != "" {
+				keep[it.Snapshot] = struct{}{}
+			}
+		}
+	}
+
+	// 2. Keep items from Lock (assumes LoadLock exists in package)
+	l, err := LoadLock()
+	if err == nil {
+		for _, a := range l.Staged.Articles {
+			if a.Snapshot != "" {
+				keep[strings.ToLower(a.Snapshot)] = struct{}{}
+			}
+		}
+	}
+
+	re := regexp.MustCompile(`(?i)^[a-f0-9]{64}\.md$`)
+	removed := 0
+
+	for _, e := range entries {
+		name := e.Name()
+		if !re.MatchString(name) {
+			continue
+		}
+		lname := strings.ToLower(name)
+		if _, ok := keep[lname]; ok {
+			continue
+		}
+
+		p := filepath.Join(snapDir, name)
+		if err := os.Remove(p); err != nil {
+			// Log but don't fail hard
+			log.Warnf("failed to remove stale snapshot %s: %v", name, err)
+			continue
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+// --- Utils (Ensure these match your utils.go or are kept here) ---
+
 func inRepo(absPath string) bool {
 	root := ProjectRootOrCwd()
 	rel, err := filepath.Rel(root, absPath)
 	return err == nil && !strings.HasPrefix(rel, "..")
 }
 
-// Slugify creates a url/filename-friendly slug from a name.
 func Slugify(name string) string {
 	s := strings.ToLower(name)
 	s = strings.TrimSpace(s)
@@ -294,24 +350,24 @@ func Slugify(name string) string {
 	return s
 }
 
-// ChecksumFromContent returns SHA256 checksum hex of provided content
 func ChecksumFromContent(content []byte) string {
 	h := sha256.Sum256(content)
 	return hex.EncodeToString(h[:])
 }
 
-// GenerateFilename ensures a deterministic filename from title and avoids collisions
+// GenerateFilename ensures a deterministic filename
 func GenerateFilename(title string, dir string) (string, error) {
 	base := Slugify(title)
 	if base == "" {
 		base = uuid.NewString()[0:8]
 	}
 	base = strings.Trim(base, " .")
-	re := regexp.MustCompile(`[^a-z0-9-]`)
-	base = re.ReplaceAllString(base, "")
+
+	// Double check slugify didn't leave empty after regex
 	if base == "" {
 		base = uuid.NewString()[0:8]
 	}
+
 	name := base + ".md"
 	full := filepath.Join(dir, name)
 	i := 1

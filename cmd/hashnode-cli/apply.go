@@ -60,35 +60,8 @@ var applyCmd = &cobra.Command{
 		}
 
 		// Compute plan from the Stage (intent) and Ledger (articles)
-		// Build a lightweight registry slice from staged metadata
+		// Load or construct sum (ledger) and build the registry slice from it.
 		var articles []diff.RegistryEntry
-		for _, it := range st.Items {
-			if it.Type != state.TypeArticle {
-				continue
-			}
-			var meta state.ArticleMeta
-			if it.ArticleMeta != nil {
-				meta = *it.ArticleMeta
-			}
-			articles = append(articles, diff.RegistryEntry{
-				LocalID:      meta.LocalID,
-				Title:        meta.Title,
-				MarkdownPath: it.Key,
-				SeriesID:     meta.SeriesID,
-				RemotePostID: meta.RemotePostID,
-				Checksum:     it.Checksum,
-				LastSyncedAt: meta.LastSyncedAt,
-			})
-		}
-		plan := diff.GeneratePlan(articles, st)
-
-		// Build set of staged include paths for quick reference
-		stagedPaths := make(map[string]struct{})
-		for p := range st.Items {
-			stagedPaths[state.NormalizePath(p)] = struct{}{}
-		}
-
-		// Load or construct sum
 		var s *state.Sum
 		if ss, err := state.LoadSum(); err == nil {
 			if err := ss.ValidateAgainstBlog(); err == nil {
@@ -98,6 +71,96 @@ var applyCmd = &cobra.Command{
 		if s == nil {
 			s, _ = state.NewSumFromBlog()
 		}
+
+		for path, a := range s.Articles {
+			articles = append(articles, diff.RegistryEntry{
+				MarkdownPath: path,
+				RemotePostID: a.PostID,
+				Checksum:     a.Checksum,
+			})
+		}
+
+		plan := diff.GeneratePlan(articles, st)
+
+		// Validate planned creations for missing/too-short titles before contacting API
+		var bad []string
+		for _, it := range plan {
+			if it.Type != diff.ActionCreate {
+				continue
+			}
+			// first prefer plan title
+			title := it.Title
+			// then staged metadata
+			if title == "" {
+				if si, ok := st.Items[state.NormalizePath(it.Path)]; ok && si.ArticleMeta != nil {
+					title = si.ArticleMeta.Title
+				}
+			}
+			// then try frontmatter from snapshot or disk
+			if title == "" {
+				var content []byte
+				var fromSnapshot bool
+				if si, ok := st.Items[state.NormalizePath(it.Path)]; ok && si.Snapshot != "" {
+					c, err := state.GetSnapshotContent(si.Snapshot)
+					if err == nil {
+						content = c
+						fromSnapshot = true
+					}
+				}
+				if len(content) == 0 {
+					fsPath := filepath.FromSlash(it.Path)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					c, err := os.ReadFile(fsPath)
+					if err == nil {
+						content = c
+					}
+				}
+				if len(content) > 0 {
+					if t, _ := state.ParseTitleFromFrontmatter(content); t != "" {
+						title = t
+					}
+				}
+				// If the title was missing in the staged snapshot but present on disk,
+				// restage the file to refresh the snapshot (safer than overriding silently).
+				if title == "" && fromSnapshot {
+					// Try reading disk explicitly
+					fsPath := filepath.FromSlash(it.Path)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					if c, err := os.ReadFile(fsPath); err == nil {
+						if t, _ := state.ParseTitleFromFrontmatter(c); t != "" {
+							// update stage by re-staging the file so snapshot/checksum are refreshed
+							if serr := state.StageAdd(it.Path); serr != nil {
+								return fmt.Errorf("failed to restage %s: %w", it.Path, serr)
+							}
+							// reload stage
+							if newSt, lerr := state.LoadStage(); lerr == nil {
+								st = newSt
+								title = t
+							}
+						}
+					}
+				}
+			}
+			// If title still empty or too short, record as bad
+			if len(title) < 6 {
+				bad = append(bad, it.Path)
+			}
+		}
+		if len(bad) > 0 {
+			return fmt.Errorf("the following staged files are missing valid titles (>=6 chars): %v. Add a 'title:' field to their frontmatter or update staged metadata", bad)
+		}
+
+		// Build set of staged include paths for quick reference
+		stagedPaths := make(map[string]struct{})
+		for p := range st.Items {
+			stagedPaths[state.NormalizePath(p)] = struct{}{}
+		}
+
+		// `s` (ledger) was loaded above when generating the plan.
 
 		// Build lookup from existing staged registry metadata
 		regByPath := make(map[string]diff.RegistryEntry)
@@ -168,21 +231,68 @@ var applyCmd = &cobra.Command{
 					return fmt.Errorf("failed to read content for %s: %w", it.Path, rerr)
 				}
 				content := string(contentBytes)
-				// perform update via API
-				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content}
+				// Determine title to send with update (use same resolution as create)
+				title := it.Title
+				if title == "" {
+					if si, ok := st.Items[np]; ok && si.ArticleMeta != nil {
+						title = si.ArticleMeta.Title
+					}
+				}
+				if title == "" {
+					if si, ok := st.Items[np]; ok && si.Snapshot != "" {
+						if c, err := state.GetSnapshotContent(si.Snapshot); err == nil {
+							if t, _ := state.ParseTitleFromFrontmatter(c); t != "" {
+								title = t
+							}
+						}
+					}
+				}
+				if title == "" {
+					fsPath := filepath.FromSlash(np)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					if c, err := os.ReadFile(fsPath); err == nil {
+						if t, _ := state.ParseTitleFromFrontmatter(c); t != "" {
+							title = t
+						}
+					}
+				}
+				if title == "" {
+					return fmt.Errorf("no title found for %s", it.Path)
+				}
+
+				// perform update via API (include title)
+				if s == nil || s.Blog.PublicationID == "" {
+					return fmt.Errorf("update failed for %s: publication id missing in ledger; run 'hashnode init'", it.Path)
+				}
+				pubID := s.Blog.PublicationID
+				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content, Title: &title, PublicationId: &pubID}
 				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
+
+				// persist staged metadata title
+				si := st.Items[np]
+				if si.ArticleMeta == nil {
+					si.ArticleMeta = &state.ArticleMeta{}
+				}
+				si.ArticleMeta.Title = title
+				st.Items[np] = si
 				// Determine checksum to store and update staged metadata
 				var checksum string
-				if si, ok := st.Items[np]; ok && si.Checksum != "" {
-					checksum = si.Checksum
+				if stored, ok := st.Items[np]; ok && stored.Checksum != "" {
+					checksum = stored.Checksum
 				} else {
 					checksum = state.ChecksumFromContent(contentBytes)
 				}
-				s.SetArticle(np, entry.RemotePostID, checksum)
-				// update staged metadata
-				si := st.Items[np]
+				// Preserve existing slug if present in the ledger
+				slug := ""
+				if le, ok := s.Articles[np]; ok {
+					slug = le.Slug
+				}
+				s.SetArticle(np, entry.RemotePostID, checksum, slug)
+				// update staged metadata (reuse si variable)
 				if si.ArticleMeta == nil {
 					si.ArticleMeta = &state.ArticleMeta{}
 				}
@@ -207,7 +317,37 @@ var applyCmd = &cobra.Command{
 					return fmt.Errorf("failed to read staged file %s: %w", it.Path, rerr)
 				}
 				content := string(contentBytes)
-				input := api.PublishPostInput{Title: it.Title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
+				// Determine title to publish (prefer plan -> staged metadata -> snapshot -> disk)
+				title := it.Title
+				if title == "" {
+					if si, ok := st.Items[np]; ok && si.ArticleMeta != nil {
+						title = si.ArticleMeta.Title
+					}
+				}
+				if title == "" {
+					if si, ok := st.Items[np]; ok && si.Snapshot != "" {
+						if c, err := state.GetSnapshotContent(si.Snapshot); err == nil {
+							if t, _ := state.ParseTitleFromFrontmatter(c); t != "" {
+								title = t
+							}
+						}
+					}
+				}
+				if title == "" {
+					fsPath := filepath.FromSlash(np)
+					if !filepath.IsAbs(fsPath) {
+						fsPath = filepath.Join(state.ProjectRootOrCwd(), fsPath)
+					}
+					if c, err := os.ReadFile(fsPath); err == nil {
+						if t, _ := state.ParseTitleFromFrontmatter(c); t != "" {
+							title = t
+						}
+					}
+				}
+				if title == "" {
+					return fmt.Errorf("no title found for %s", it.Path)
+				}
+				input := api.PublishPostInput{Title: title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
 				resp, perr := api.PublishPost(context.Background(), client, input)
 				if perr != nil {
 					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
@@ -236,7 +376,12 @@ var applyCmd = &cobra.Command{
 				si.ArticleMeta.RemotePostID = newID
 				si.ArticleMeta.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
 				st.Items[np] = si
-				s.SetArticle(np, newID, checksum)
+				// record slug returned by publish API
+				pubSlug := ""
+				if resp != nil && resp.PublishPost.Post != nil {
+					pubSlug = resp.PublishPost.Post.Slug
+				}
+				s.SetArticle(np, newID, checksum, pubSlug)
 				fmt.Printf("Created post %s -> %s\n", it.Path, newID)
 			}
 		}

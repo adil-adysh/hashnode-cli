@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,6 +14,48 @@ import (
 var stageCmd = &cobra.Command{
 	Use:   "stage",
 	Short: "Manage staging area (select what will be applied)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// top-level convenience: `hn stage <path>` behaves like `hn stage add <path>`
+		if len(args) == 0 {
+			return cmd.Usage()
+		}
+		p := args[0]
+		info, err := os.Stat(p)
+		if err == nil && info.IsDir() {
+			fmt.Printf("➕ Staging tracked articles under %s\n\n", p)
+			staged, skipped, err := state.StageDir(p)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("✔ %d articles staged\n", len(staged))
+			fmt.Printf("ℹ️  %d files ignored (not Hashnode articles)\n\n", len(skipped))
+			fmt.Println("Next:")
+			fmt.Println("  • Review staged changes: hashnode stage list")
+			fmt.Println("  • Preview publish plan: hashnode plan")
+			if stageAddVerbose {
+				if len(staged) > 0 {
+					fmt.Println("Staged:")
+					for _, s := range staged {
+						fmt.Printf("  - %s\n", s)
+					}
+				}
+				if len(skipped) > 0 {
+					fmt.Println("Ignored:")
+					for _, s := range skipped {
+						fmt.Printf("  - %s\n", s)
+					}
+				}
+			}
+			return nil
+		}
+		if err := state.StageAdd(p); err != nil {
+			return err
+		}
+		fmt.Printf("✔ 1 article staged (%s)\n", state.NormalizePath(p))
+		fmt.Println("Next: hashnode stage list | hashnode plan")
+		return nil
+	},
 }
 
 var stageAddCmd = &cobra.Command{
@@ -68,17 +111,12 @@ var stageAddCmd = &cobra.Command{
 
 var stageAddVerbose bool
 
-var stageRemoveCmd = &cobra.Command{
-	Use:   "remove <path>",
-	Short: "Remove a file from include and add to exclude",
+var deleteCmd = &cobra.Command{
+	Use:   "delete <path>",
+	Short: "Mark a file for remote deletion (stage delete)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := args[0]
-		st, err := state.LoadStage()
-		if err != nil {
-			return err
-		}
-
 		info, err := os.Stat(p)
 		isDir := false
 		if err == nil && info.IsDir() {
@@ -86,12 +124,58 @@ var stageRemoveCmd = &cobra.Command{
 		}
 
 		if isDir {
-			// remove any staged entries under this directory
+			// Walk directory and mark tracked markdown files for deletion
+			var marked int
+			err := filepath.WalkDir(p, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				ext := strings.ToLower(filepath.Ext(path))
+				if ext != ".md" && ext != ".markdown" {
+					return nil
+				}
+				if serr := state.StageRemove(path); serr == nil {
+					marked++
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("✔ %d articles marked for deletion under %s\n", marked, p)
+			return nil
+		}
+
+		// single file
+		if err := state.StageRemove(p); err != nil {
+			return err
+		}
+		fmt.Printf("✔ 1 article marked for deletion (%s)\n", state.NormalizePath(p))
+		return nil
+	},
+}
+
+var unstageTopCmd = &cobra.Command{
+	Use:   "unstage <path>",
+	Short: "Remove a file from the stage (Cancel intent)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p := args[0]
+		info, err := os.Stat(p)
+		isDir := false
+		if err == nil && info.IsDir() {
+			isDir = true
+		}
+
+		if isDir {
 			dirNorm := state.NormalizePath(p)
-			// ensure prefix ends with '/'
 			dirPrefix := dirNorm
 			if dirPrefix != "./" && !strings.HasSuffix(dirPrefix, "/") {
 				dirPrefix = dirPrefix + "/"
+			}
+			st, err := state.LoadStage()
+			if err != nil {
+				return err
 			}
 			var removed []string
 			for k := range st.Items {
@@ -103,21 +187,22 @@ var stageRemoveCmd = &cobra.Command{
 			if err := state.SaveStage(st); err != nil {
 				return err
 			}
+			// Clean up any unreferenced snapshots now that items were unstaged
+			if n, cerr := state.GCStaleSnapshots(); cerr == nil && n > 0 {
+				fmt.Printf("🧹 Removed %d unreferenced snapshots\n", n)
+			}
 			fmt.Printf("✔ %d articles removed from stage under %s\n", len(removed), p)
 			return nil
 		}
 
-		// file: unstage single file
-		norm := state.NormalizePath(p)
-		if _, ok := st.Items[norm]; ok {
-			delete(st.Items, norm)
-			if err := state.SaveStage(st); err != nil {
-				return err
-			}
-			fmt.Printf("✔ 1 article removed from stage (%s)\n", norm)
-			return nil
+		if err := state.Unstage(p); err != nil {
+			return err
 		}
-		fmt.Printf("ℹ️  article not staged: %s\n", norm)
+		// After unstaging a single file, run snapshot GC to free unused snapshots
+		if n, cerr := state.GCStaleSnapshots(); cerr == nil && n > 0 {
+			fmt.Printf("🧹 Removed %d unreferenced snapshots\n", n)
+		}
+		fmt.Printf("✔ 1 article removed from stage (%s)\n", state.NormalizePath(p))
 		return nil
 	},
 }
@@ -135,19 +220,19 @@ var stageListCmd = &cobra.Command{
 
 		// build merged entries map (sum + staged metadata) for titles/metadata
 		sum, _ := state.LoadSum()
-		mergedMap := map[string]struct{
-			Title string
-			LocalID string
-			Checksum string
+		mergedMap := map[string]struct {
+			Title        string
+			LocalID      string
+			Checksum     string
 			RemotePostID string
 		}{}
 		if sum != nil {
 			if err := sum.ValidateAgainstBlog(); err == nil {
 				for path, sa := range sum.Articles {
-					mergedMap[path] = struct{Title,LocalID,Checksum,RemotePostID string}{
-						Title: "",
-						LocalID: "",
-						Checksum: sa.Checksum,
+					mergedMap[path] = struct{ Title, LocalID, Checksum, RemotePostID string }{
+						Title:        "",
+						LocalID:      "",
+						Checksum:     sa.Checksum,
 						RemotePostID: sa.PostID,
 					}
 				}
@@ -163,11 +248,16 @@ var stageListCmd = &cobra.Command{
 				title = it.ArticleMeta.Title
 				localID = it.ArticleMeta.LocalID
 			}
-			mergedMap[it.Key] = struct{Title,LocalID,Checksum,RemotePostID string}{
-				Title: title,
-				LocalID: localID,
+			mergedMap[it.Key] = struct{ Title, LocalID, Checksum, RemotePostID string }{
+				Title:    title,
+				LocalID:  localID,
 				Checksum: it.Checksum,
-				RemotePostID: func() string { if it.ArticleMeta != nil { return it.ArticleMeta.RemotePostID }; return "" }(),
+				RemotePostID: func() string {
+					if it.ArticleMeta != nil {
+						return it.ArticleMeta.RemotePostID
+					}
+					return ""
+				}(),
 			}
 		}
 
@@ -263,7 +353,10 @@ var stageListCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(stageCmd)
 	stageCmd.AddCommand(stageAddCmd)
-	stageCmd.AddCommand(stageRemoveCmd)
 	stageCmd.AddCommand(stageListCmd)
+	// top-level delete command for staging deletions
+	rootCmd.AddCommand(deleteCmd)
+	// top-level unstage convenience
+	rootCmd.AddCommand(unstageTopCmd)
 	stageAddCmd.Flags().BoolVarP(&stageAddVerbose, "verbose", "v", false, "Print every staged and skipped file")
 }

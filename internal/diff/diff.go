@@ -30,8 +30,6 @@ type PlanItem struct {
 	RemoteID string // The Hashnode ID (if known)
 }
 
-// FullDiff checks the status of tracked articles against the disk.
-// Used by `hnsync status` to show Modified/Deleted files.
 // RegistryEntry is a lightweight representation of registry metadata used by diff
 type RegistryEntry struct {
 	LocalID      string
@@ -43,6 +41,8 @@ type RegistryEntry struct {
 	LastSyncedAt string
 }
 
+// FullDiff checks the status of tracked articles against the disk.
+// Used by `hnsync status` to show Modified/Deleted files.
 func FullDiff(articles []RegistryEntry) []PlanItem {
 	var plan []PlanItem
 
@@ -113,15 +113,7 @@ func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 
 	for _, a := range articles {
 		norm := state.NormalizePath(a.MarkdownPath)
-		reg[norm] = RegistryEntry{
-			LocalID:      a.LocalID,
-			Title:        a.Title,
-			MarkdownPath: a.MarkdownPath,
-			SeriesID:     a.SeriesID,
-			RemotePostID: a.RemotePostID,
-			Checksum:     a.Checksum,
-			LastSyncedAt: a.LastSyncedAt,
-		}
+		reg[norm] = a
 		// Only map valid synced articles for rename detection
 		if a.RemotePostID != "" && a.Checksum != "" {
 			checksumToPath[a.Checksum] = norm
@@ -129,10 +121,9 @@ func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 	}
 
 	// ---------------------------------------------------------
-	// 2. PROCESS STAGE (O(M)) - New schema: Stage.Items map
+	// 2. PROCESS STAGE (O(M))
 	// ---------------------------------------------------------
 	for rawPath, stagedItem := range st.Items {
-		// Keys are stored normalized, but normalize again for safety
 		path := state.NormalizePath(rawPath)
 
 		// Handle explicit delete intent
@@ -153,7 +144,7 @@ func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 			continue
 		}
 
-		// Determine current checksum: prefer staged checksum, then snapshot, then disk.
+		// Determine current checksum: prefer staged, then snapshot, then disk.
 		var currentHash string
 		if stagedItem.Checksum != "" {
 			currentHash = stagedItem.Checksum
@@ -181,30 +172,42 @@ func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 		if !exists {
 			// RENAME HEURISTIC: Does this content exist elsewhere?
 			if oldPath, found := checksumToPath[currentHash]; found {
-				oldEntry := reg[oldPath]
-				plan = append(plan, PlanItem{
-					Type:     ActionUpdate, // Treat Rename as an Update to the pointer
-					Path:     path,
-					OldPath:  oldPath,
-					RemoteID: oldEntry.RemotePostID,
-					Title:    oldEntry.Title,
-					Reason:   fmt.Sprintf("Rename detected (content matches %s)", oldPath),
-				})
-			} else {
-				// Truly New
-				plan = append(plan, PlanItem{
-					Type:   ActionCreate,
-					Path:   path,
-					Reason: "New Article (Staged)",
-				})
+				// SAFEGUARD: Only rename if old file is GONE (Deleted or Staged for Delete)
+				isGone := false
+				if _, err := os.Stat(resolveAbsPath(oldPath)); os.IsNotExist(err) {
+					isGone = true
+				}
+				if oldItem, ok := st.Items[state.NormalizePath(oldPath)]; ok && oldItem.Operation == state.OpDelete {
+					isGone = true
+				}
+
+				if isGone {
+					oldEntry := reg[oldPath]
+					plan = append(plan, PlanItem{
+						Type:     ActionUpdate, // Treat Rename as an Update
+						Path:     path,
+						OldPath:  oldPath,
+						RemoteID: oldEntry.RemotePostID,
+						Title:    oldEntry.Title,
+						Reason:   fmt.Sprintf("Rename detected (matches missing %s)", oldPath),
+					})
+					continue
+				}
+				// If old file exists, it's a COPY, so fall through to Create.
 			}
+
+			// Truly New
+			plan = append(plan, PlanItem{
+				Type:   ActionCreate,
+				Path:   path,
+				Reason: "New Article (Staged)",
+			})
 			continue
 		}
 
 		// CASE B: EXISTING FILE (In Registry)
 		action, reason := determineAction(currentHash, entry.Checksum, entry.RemotePostID)
 
-		// Override reason for plan clarity
 		if action == ActionCreate {
 			reason = "Draft Promotion (First Push)"
 		}
@@ -242,28 +245,74 @@ func resolveAbsPath(p string) string {
 	return fsPath
 }
 
-// PrintPlanSummary prints a user-friendly summary of the plan.
+// PrintPlanSummary prints a High-Level, Risk-Aware summary
 func PrintPlanSummary(plan []PlanItem) {
-	log.Printf("📝 Execution Plan: %d changes detected\n", countChanges(plan))
-	log.Println("---------------------------------------------------")
+	var nCreate, nUpdate, nDelete, nSkip int
 	for _, item := range plan {
-		var icon string
 		switch item.Type {
 		case ActionCreate:
-			icon = "🟢 [CREATE]"
+			nCreate++
 		case ActionUpdate:
-			icon = "🟡 [UPDATE]"
+			nUpdate++
 		case ActionDelete:
-			icon = "🔴 [DELETE]"
+			nDelete++
 		case ActionSkip:
-			icon = "⚪ [SKIP]  "
-		}
-
-		if item.Type != ActionSkip {
-			log.Printf("%s %s\n      Path: %s\n      Reason: %s\n", icon, item.Title, item.Path, item.Reason)
+			nSkip++
 		}
 	}
+	totalOps := nCreate + nUpdate + nDelete
+
 	log.Println("---------------------------------------------------")
+	log.Printf("📝  PLAN SUMMARY: %d changes to be applied\n", totalOps)
+
+	if totalOps == 0 {
+		log.Println("   (No changes detected. Working tree matches remote.)")
+		log.Println("---------------------------------------------------")
+		return
+	}
+
+	if nCreate > 0 {
+		log.Printf("   🟢  Creates: %d\n", nCreate)
+	}
+	if nUpdate > 0 {
+		log.Printf("   🟡  Updates: %d\n", nUpdate)
+	}
+	if nDelete > 0 {
+		log.Printf("   🔴  Deletes: %d\n", nDelete)
+	}
+	if nSkip > 0 {
+		log.Printf("   ⚪  Skipped: %d\n", nSkip)
+	}
+
+	log.Println("---------------------------------------------------")
+
+	// Print Groups: Risk First
+	printGroup(plan, ActionDelete, "🔴  DELETIONS")
+	printGroup(plan, ActionCreate, "🟢  CREATIONS")
+	printGroup(plan, ActionUpdate, "🟡  UPDATES")
+
+	log.Println("---------------------------------------------------")
+}
+
+func printGroup(plan []PlanItem, action ActionType, header string) {
+	hasItems := false
+	for _, item := range plan {
+		if item.Type == action {
+			hasItems = true
+			break
+		}
+	}
+	if !hasItems {
+		return
+	}
+
+	log.Printf("\n%s\n", header)
+	for _, item := range plan {
+		if item.Type == action {
+			log.Printf("   %s (%s)\n", item.Title, item.Path)
+			log.Printf("     └─ Reason: %s\n", item.Reason)
+		}
+	}
 }
 
 func countChanges(plan []PlanItem) int {
