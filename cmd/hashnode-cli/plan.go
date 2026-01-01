@@ -60,10 +60,6 @@ var planCmd = &cobra.Command{
 						Checksum:     sa.Checksum,
 						Title:        sa.Title,
 					}
-					// Prefer staged checksum if present
-					if reg, ok := regMap[path]; ok && reg.Checksum != "" {
-						entry.Checksum = reg.Checksum
-					}
 					merged = append(merged, entry)
 					delete(regMap, path)
 				}
