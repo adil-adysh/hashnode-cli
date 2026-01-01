@@ -16,7 +16,6 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(applyCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.PersistentFlags().StringP("token", "t", "", "Hashnode API token (env HASHNODE_TOKEN preferred)")
