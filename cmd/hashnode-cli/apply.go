@@ -366,6 +366,12 @@ var applyCmd = &cobra.Command{
 			return fmt.Errorf("failed to clear stage: %w", err)
 		}
 
+		// GC unreferenced snapshots now that stage is empty
+		snapStore := state.NewSnapshotStore()
+		if stats, gerr := snapStore.GC(false); gerr == nil && stats.RemovedCount > 0 {
+			fmt.Printf("🧹 Removed %d old snapshot(s)\n", stats.RemovedCount)
+		}
+
 		// Mark as successful so lock release is logged
 		applySuccess = true
 		fmt.Println("apply: completed (created/updated posts and wrote hashnode.sum)")
