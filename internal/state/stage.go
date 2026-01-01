@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"adil-adysh/hashnode-cli/internal/log"
 )
 
 // ItemType allows us to distinguish between content and containers
@@ -31,7 +29,9 @@ const (
 	OpDelete Operation = "DELETE" // Intent to remove
 )
 
-// StagedItem represents a unit of work waiting to be planned
+// StagedItem represents a unit of work waiting to be planned.
+// It stores ONLY intent (operation + snapshot reference), not metadata.
+// Metadata (title, remoteID, etc.) comes from the ledger or disk.
 type StagedItem struct {
 	Type      ItemType  `yaml:"type"`
 	Key       string    `yaml:"key"` // Path (Article) or Slug (Series)
@@ -96,6 +96,8 @@ func StageDir(dir string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 
+	snapStore := NewSnapshotStore()
+
 	var staged []string
 	var skipped []string
 
@@ -105,6 +107,10 @@ func StageDir(dir string) ([]string, []string, error) {
 			return err
 		}
 		if d.IsDir() {
+			// Skip .hashnode state directory entirely
+			if d.Name() == StateDir {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(p))
@@ -119,16 +125,15 @@ func StageDir(dir string) ([]string, []string, error) {
 			return nil
 		}
 
-		// Read content to snapshot
+		// Read content and create snapshot
 		content, err := os.ReadFile(absPath)
 		if err != nil {
 			skipped = append(skipped, p)
 			return nil
 		}
-		checksum := ChecksumFromContent(content)
-		snapshotName := fmt.Sprintf("%s.md", checksum)
 
-		if err := saveSnapshot(snapshotName, content); err != nil {
+		snap, err := snapStore.Create(content)
+		if err != nil {
 			return err
 		}
 
@@ -138,8 +143,8 @@ func StageDir(dir string) ([]string, []string, error) {
 			Type:      TypeArticle,
 			Key:       key,
 			Operation: OpModify,
-			Checksum:  checksum,
-			Snapshot:  snapshotName,
+			Checksum:  snap.Checksum,
+			Snapshot:  snap.Filename,
 			StagedAt:  time.Now(),
 		}
 		staged = append(staged, key)
@@ -169,16 +174,21 @@ func StageAdd(path string) error {
 		return fmt.Errorf("path is outside repository")
 	}
 
-	// 2. Read Content & Compute Hash
+	// Prevent staging snapshot files
+	if isInStateDir(absPath) {
+		return fmt.Errorf("cannot stage files from %s directory", StateDir)
+	}
+
+	// 2. Read Content
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
-	checksum := ChecksumFromContent(content)
 
 	// 3. Create Snapshot
-	snapshotName := fmt.Sprintf("%s.md", checksum)
-	if err := saveSnapshot(snapshotName, content); err != nil {
+	snapStore := NewSnapshotStore()
+	snap, err := snapStore.Create(content)
+	if err != nil {
 		return err
 	}
 
@@ -193,8 +203,8 @@ func StageAdd(path string) error {
 		Type:      TypeArticle,
 		Key:       key,
 		Operation: OpModify,
-		Checksum:  checksum,
-		Snapshot:  snapshotName,
+		Checksum:  snap.Checksum,
+		Snapshot:  snap.Filename,
 		StagedAt:  time.Now(),
 	}
 
@@ -237,22 +247,7 @@ func Unstage(path string) error {
 	return nil
 }
 
-// Helper: saveSnapshot writes content to .hashnode/snapshots/
-func saveSnapshot(filename string, content []byte) error {
-	snapDir := StatePath("snapshots")
-	if err := os.MkdirAll(snapDir, 0755); err != nil {
-		return fmt.Errorf("failed to create snapshot dir: %w", err)
-	}
-
-	path := filepath.Join(snapDir, filename)
-	// Optimization: If snapshot exists, don't re-write (Content Addressable)
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
-	return AtomicWriteFile(path, content, 0644)
-}
-
-// IsStagingItemStale returns true if local checksum differs from stage
+// IsStagingItemStale returns true if local checksum differs from stage.
 func IsStagingItemStale(item StagedItem, path string) bool {
 	fsPath := filepath.FromSlash(path)
 	if !filepath.IsAbs(fsPath) {
@@ -269,75 +264,19 @@ func IsStagingItemStale(item StagedItem, path string) bool {
 	return ChecksumFromContent(data) != item.Checksum
 }
 
-// Helper: GetSnapshotContent retrieves the frozen content
-func GetSnapshotContent(filename string) ([]byte, error) {
-	path := StatePath("snapshots", filename)
-	return os.ReadFile(path)
-}
-
-// GCStaleSnapshots removes unreferenced snapshot files.
-// Note: Requires LoadLock implementation (not provided in this file, assumed exists in package)
-func GCStaleSnapshots() (int, error) {
-	snapDir := StatePath("snapshots")
-	entries, err := os.ReadDir(snapDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("failed to read snapshots dir: %w", err)
-	}
-
-	keep := make(map[string]struct{})
-
-	// 1. Keep items from Stage
-	st, err := LoadStage()
-	if err == nil {
-		for _, it := range st.Items {
-			if it.Snapshot != "" {
-				keep[it.Snapshot] = struct{}{}
-			}
-		}
-	}
-
-	// 2. Keep items from Lock (assumes LoadLock exists in package)
-	l, err := LoadLock()
-	if err == nil {
-		for _, a := range l.Staged.Articles {
-			if a.Snapshot != "" {
-				keep[strings.ToLower(a.Snapshot)] = struct{}{}
-			}
-		}
-	}
-
-	re := regexp.MustCompile(`(?i)^[a-f0-9]{64}\.md$`)
-	removed := 0
-
-	for _, e := range entries {
-		name := e.Name()
-		if !re.MatchString(name) {
-			continue
-		}
-		lname := strings.ToLower(name)
-		if _, ok := keep[lname]; ok {
-			continue
-		}
-
-		p := filepath.Join(snapDir, name)
-		if err := os.Remove(p); err != nil {
-			// Log but don't fail hard
-			log.Warnf("failed to remove stale snapshot %s: %v", name, err)
-			continue
-		}
-		removed++
-	}
-	return removed, nil
-}
-
 // --- Utils (Ensure these match your utils.go or are kept here) ---
 
 func inRepo(absPath string) bool {
 	root := ProjectRootOrCwd()
 	rel, err := filepath.Rel(root, absPath)
+	return err == nil && !strings.HasPrefix(rel, "..")
+}
+
+// isInStateDir checks if a path is within the .hashnode state directory.
+func isInStateDir(absPath string) bool {
+	root := ProjectRootOrCwd()
+	stateDir := filepath.Join(root, StateDir)
+	rel, err := filepath.Rel(stateDir, absPath)
 	return err == nil && !strings.HasPrefix(rel, "..")
 }
 

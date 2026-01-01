@@ -149,7 +149,8 @@ func GeneratePlan(articles []RegistryEntry, st *state.Stage) []PlanItem {
 		if stagedItem.Checksum != "" {
 			currentHash = stagedItem.Checksum
 		} else if stagedItem.Snapshot != "" {
-			if content, err := state.GetSnapshotContent(stagedItem.Snapshot); err == nil {
+			snapStore := state.NewSnapshotStore()
+			if content, err := snapStore.Get(stagedItem.Snapshot); err == nil {
 				currentHash = state.ChecksumFromContent(content)
 			}
 		}

@@ -53,6 +53,13 @@ var stageCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("✔ 1 article staged (%s)\n", state.NormalizePath(p))
+
+		// Clean up any old snapshot that was replaced
+		snapStore := state.NewSnapshotStore()
+		if stats, cerr := snapStore.GC(false); cerr == nil && stats.RemovedCount > 0 {
+			fmt.Printf("🧹 Removed %d old snapshot(s)\n", stats.RemovedCount)
+		}
+
 		fmt.Println("Next: hashnode stage list | hashnode plan")
 		return nil
 	},
@@ -78,6 +85,13 @@ var stageAddCmd = &cobra.Command{
 			}
 			fmt.Printf("✔ %d articles staged\n", len(staged))
 			fmt.Printf("ℹ️  %d files ignored (not Hashnode articles)\n\n", len(skipped))
+
+			// Clean up any old snapshots that were replaced during re-staging
+			snapStore := state.NewSnapshotStore()
+			if stats, cerr := snapStore.GC(false); cerr == nil && stats.RemovedCount > 0 {
+				fmt.Printf("🧹 Removed %d old snapshots\n", stats.RemovedCount)
+			}
+
 			fmt.Println("Next:")
 			fmt.Println("  • Review staged changes: hashnode stage list")
 			fmt.Println("  • Preview publish plan: hashnode plan")
@@ -104,6 +118,13 @@ var stageAddCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("✔ 1 article staged (%s)\n", state.NormalizePath(p))
+
+		// Clean up any old snapshot that was replaced
+		snapStore := state.NewSnapshotStore()
+		if stats, cerr := snapStore.GC(false); cerr == nil && stats.RemovedCount > 0 {
+			fmt.Printf("🧹 Removed %d old snapshot(s)\n", stats.RemovedCount)
+		}
+
 		fmt.Println("Next: hashnode stage list | hashnode plan")
 		return nil
 	},
@@ -188,8 +209,9 @@ var unstageTopCmd = &cobra.Command{
 				return err
 			}
 			// Clean up any unreferenced snapshots now that items were unstaged
-			if n, cerr := state.GCStaleSnapshots(); cerr == nil && n > 0 {
-				fmt.Printf("🧹 Removed %d unreferenced snapshots\n", n)
+			snapStore := state.NewSnapshotStore()
+			if stats, cerr := snapStore.GC(false); cerr == nil && stats.RemovedCount > 0 {
+				fmt.Printf("🧹 Removed %d unreferenced snapshots\n", stats.RemovedCount)
 			}
 			fmt.Printf("✔ %d articles removed from stage under %s\n", len(removed), p)
 			return nil
@@ -199,8 +221,9 @@ var unstageTopCmd = &cobra.Command{
 			return err
 		}
 		// After unstaging a single file, run snapshot GC to free unused snapshots
-		if n, cerr := state.GCStaleSnapshots(); cerr == nil && n > 0 {
-			fmt.Printf("🧹 Removed %d unreferenced snapshots\n", n)
+		snapStore := state.NewSnapshotStore()
+		if stats, cerr := snapStore.GC(false); cerr == nil && stats.RemovedCount > 0 {
+			fmt.Printf("🧹 Removed %d unreferenced snapshots\n", stats.RemovedCount)
 		}
 		fmt.Printf("✔ 1 article removed from stage (%s)\n", state.NormalizePath(p))
 		return nil
@@ -243,21 +266,26 @@ var stageListCmd = &cobra.Command{
 			if it.Type != state.TypeArticle {
 				continue
 			}
-			var title, localID string
-			if it.ArticleMeta != nil {
-				title = it.ArticleMeta.Title
-				localID = it.ArticleMeta.LocalID
+			// Get title from ledger
+			var title string
+			if e, ok := mergedMap[it.Key]; ok {
+				title = e.Title
 			}
+			// If not in ledger, try to resolve from disk/snapshot
+			if title == "" {
+				title, _ = state.ResolveTitleForPath(it.Key, sum, st)
+			}
+
+			var remoteID string
+			if e, ok := mergedMap[it.Key]; ok {
+				remoteID = e.RemotePostID
+			}
+
 			mergedMap[it.Key] = struct{ Title, LocalID, Checksum, RemotePostID string }{
-				Title:    title,
-				LocalID:  localID,
-				Checksum: it.Checksum,
-				RemotePostID: func() string {
-					if it.ArticleMeta != nil {
-						return it.ArticleMeta.RemotePostID
-					}
-					return ""
-				}(),
+				Title:        title,
+				LocalID:      "",
+				Checksum:     it.Checksum,
+				RemotePostID: remoteID,
 			}
 		}
 

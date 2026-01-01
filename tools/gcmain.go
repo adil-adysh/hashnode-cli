@@ -8,9 +8,14 @@ import (
 )
 
 func GcMain() {
-	removed, err := state.GCStaleSnapshots()
+	snapStore := state.NewSnapshotStore()
+	stats, err := snapStore.GC(false)
 	if err != nil {
 		log.Fatalf("GC failed: %v", err)
 	}
-	fmt.Printf("GC removed %d snapshots\n", removed)
+	fmt.Printf("GC removed %d snapshots (scanned %d, %d referenced)\n",
+		stats.RemovedCount, stats.TotalSnapshots, stats.ReferencedCount)
+	for _, removed := range stats.RemovedSnapshots {
+		fmt.Printf("  - %s\n", removed)
+	}
 }

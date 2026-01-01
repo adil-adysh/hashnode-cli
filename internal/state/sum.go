@@ -24,6 +24,14 @@ type ArticleSum struct {
 	PostID   string `yaml:"post_id"`
 	Checksum string `yaml:"checksum"`
 	Slug     string `yaml:"slug,omitempty"`
+	Title    string `yaml:"title,omitempty"` // Cached from frontmatter for display
+}
+
+type SeriesEntry struct {
+	SeriesID    string `yaml:"series_id"`
+	Name        string `yaml:"name"`
+	Slug        string `yaml:"slug"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // SeriesEntry is defined in state.go, but we ensure it works here.
@@ -111,7 +119,25 @@ func (s *Sum) SetArticle(path, postID, checksum, slug string) {
 	if s.Articles == nil {
 		s.Articles = make(map[string]ArticleSum)
 	}
-	s.Articles[path] = ArticleSum{PostID: postID, Checksum: checksum, Slug: slug}
+	entry := s.Articles[path]
+	entry.PostID = postID
+	entry.Checksum = checksum
+	entry.Slug = slug
+	// Preserve existing title if present
+	s.Articles[path] = entry
+}
+
+// SetArticleWithTitle sets article entry including title cache
+func (s *Sum) SetArticleWithTitle(path, postID, checksum, slug, title string) {
+	if s.Articles == nil {
+		s.Articles = make(map[string]ArticleSum)
+	}
+	s.Articles[path] = ArticleSum{
+		PostID:   postID,
+		Checksum: checksum,
+		Slug:     slug,
+		Title:    title,
+	}
 }
 
 // RemoveArticle deletes an article entry from the sum

@@ -14,18 +14,25 @@ func main() {
 		fmt.Println("LoadStage err:", err)
 		return
 	}
+	sum, _ := state.LoadSum()
+
 	var articles []diff.RegistryEntry
 	for _, it := range st.Items {
 		if it.Type != state.TypeArticle {
 			continue
 		}
-		var meta state.ArticleMeta
-		if it.ArticleMeta != nil {
-			meta = *it.ArticleMeta
+		var entry diff.RegistryEntry
+		entry.MarkdownPath = it.Key
+		entry.Checksum = it.Checksum
+
+		// Get metadata from ledger
+		if sum != nil {
+			if a, ok := sum.Articles[it.Key]; ok {
+				entry.RemotePostID = a.PostID
+				entry.Title = a.Title
+			}
 		}
-		articles = append(articles, diff.RegistryEntry{
-			LocalID: meta.LocalID, Title: meta.Title, MarkdownPath: it.Key, SeriesID: meta.SeriesID, RemotePostID: meta.RemotePostID, Checksum: it.Checksum,
-		})
+		articles = append(articles, entry)
 	}
 	plan := diff.GeneratePlan(articles, st)
 	for _, it := range plan {
@@ -41,7 +48,8 @@ func main() {
 		}
 		fmt.Println(" staged snapshot:", si.Snapshot)
 		if si.Snapshot != "" {
-			c, err := state.GetSnapshotContent(si.Snapshot)
+			snapStore := state.NewSnapshotStore()
+			c, err := snapStore.Get(si.Snapshot)
 			if err != nil {
 				fmt.Println(" snapshot read err:", err)
 			} else {

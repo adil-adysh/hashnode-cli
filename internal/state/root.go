@@ -83,3 +83,11 @@ func ProjectRootOrCwd() string {
 	}
 	return "."
 }
+
+// ResetProjectRootCache clears the cached project root.
+// This is primarily for testing purposes.
+func ResetProjectRootCache() {
+	cachedRoot = ""
+	cachedErr = nil
+	rootOnce = sync.Once{}
+}

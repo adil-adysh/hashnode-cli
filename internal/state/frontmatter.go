@@ -3,6 +3,10 @@ package state
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,8 +43,49 @@ func ParseTitleFromFrontmatter(content []byte) (string, error) {
 	}
 	if t, ok := m["title"]; ok {
 		if s, ok := t.(string); ok {
-			return s, nil
+			return strings.TrimSpace(s), nil
 		}
 	}
 	return "", nil
+}
+
+// ResolveTitleForPath resolves the title for a file path.
+// It tries (in order): ledger cache, snapshot, then disk frontmatter.
+// Returns error only if file can't be read; empty title is valid.
+func ResolveTitleForPath(path string, sum *Sum, stage *Stage) (string, error) {
+	normPath := NormalizePath(path)
+
+	// 1. Try ledger cache first
+	if sum != nil {
+		if entry, ok := sum.Articles[normPath]; ok && entry.Title != "" {
+			return entry.Title, nil
+		}
+	}
+
+	// 2. Try snapshot if staged
+	if stage != nil {
+		if si, ok := stage.Items[normPath]; ok && si.Snapshot != "" {
+			snapStore := NewSnapshotStore()
+			content, err := snapStore.Get(si.Snapshot)
+			if err == nil {
+				if title, _ := ParseTitleFromFrontmatter(content); title != "" {
+					return title, nil
+				}
+			}
+		}
+	}
+
+	// 3. Parse from disk
+	fsPath := filepath.FromSlash(path)
+	if !filepath.IsAbs(fsPath) {
+		fsPath = filepath.Join(ProjectRootOrCwd(), fsPath)
+	}
+
+	content, err := os.ReadFile(fsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	title, _ := ParseTitleFromFrontmatter(content)
+	return title, nil
 }

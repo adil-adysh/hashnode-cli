@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/state"
@@ -28,42 +27,57 @@ var seriesCreateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Load existing stage and check for existing series by name
+		slug := state.Slugify(name)
+
+		// Load ledger to check for existing series
+		sum, err := state.LoadSum()
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "❌ Failed to load ledger: %v\n", err)
+			os.Exit(1)
+		}
+		if sum == nil {
+			sum, _ = state.NewSumFromBlog()
+		}
+
+		// Check if series already exists in ledger
+		if _, exists := sum.Series[slug]; exists {
+			fmt.Printf("No-op: series '%s' (slug=%s) already exists in ledger\n", name, slug)
+			return
+		}
+
+		// Add to ledger
+		sum.Series[slug] = state.SeriesEntry{
+			SeriesID:    "", // Will be set on apply
+			Name:        name,
+			Slug:        slug,
+			Description: "",
+		}
+
+		if err := state.SaveSum(sum); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to save ledger: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Also stage it so apply knows to create
 		st, err := state.LoadStage()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to load stage: %v\n", err)
 			os.Exit(1)
 		}
-		for _, it := range st.Items {
-			if it.Type != state.TypeSeries || it.SeriesMeta == nil {
-				continue
-			}
-			if it.SeriesMeta.Title == name {
-				fmt.Printf("No-op: series with name '%s' already exists (slug=%s)\n", it.SeriesMeta.Title, it.SeriesMeta.Slug)
-				return
-			}
-		}
 
-		slug := state.Slugify(name)
-		// create staged series entry
-		key := slug
-		si := state.StagedItem{
+		st.Items[slug] = state.StagedItem{
 			Type:      state.TypeSeries,
-			Key:       key,
+			Key:       slug,
 			Operation: state.OpModify,
 			StagedAt:  time.Now(),
-			SeriesMeta: &state.SeriesMeta{
-				LocalID: uuid.NewString(),
-				Title:   name,
-				Slug:    slug,
-			},
 		}
-		st.Items[key] = si
+
 		if err := state.SaveStage(st); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to save stage: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Created series '%s' (slug=%s) in staged metadata\n", name, slug)
+
+		fmt.Printf("Created series '%s' (slug=%s) - run 'hn apply' to publish\n", name, slug)
 	},
 }
 

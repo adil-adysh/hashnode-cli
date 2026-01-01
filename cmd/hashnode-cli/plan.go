@@ -33,19 +33,19 @@ var planCmd = &cobra.Command{
 			if it.Type != state.TypeArticle {
 				continue
 			}
-			var meta state.ArticleMeta
-			if it.ArticleMeta != nil {
-				meta = *it.ArticleMeta
-			}
-			regMap[it.Key] = diff.RegistryEntry{
-				LocalID:      meta.LocalID,
-				Title:        meta.Title,
+			// Get metadata from ledger, not from stage
+			entry := diff.RegistryEntry{
 				MarkdownPath: it.Key,
-				SeriesID:     meta.SeriesID,
-				RemotePostID: meta.RemotePostID,
 				Checksum:     it.Checksum,
-				LastSyncedAt: meta.LastSyncedAt,
 			}
+			// Enrich with ledger data if available
+			if sumErr == nil {
+				if a, ok := sum.Articles[it.Key]; ok {
+					entry.RemotePostID = a.PostID
+					entry.Title = a.Title
+				}
+			}
+			regMap[it.Key] = entry
 		}
 
 		if sumErr == nil {
@@ -58,12 +58,11 @@ var planCmd = &cobra.Command{
 						MarkdownPath: path,
 						RemotePostID: sa.PostID,
 						Checksum:     sa.Checksum,
+						Title:        sa.Title,
 					}
-					if reg, ok := regMap[path]; ok {
-						entry.Title = reg.Title
-						entry.LocalID = reg.LocalID
-						entry.SeriesID = reg.SeriesID
-						entry.LastSyncedAt = reg.LastSyncedAt
+					// Prefer staged checksum if present
+					if reg, ok := regMap[path]; ok && reg.Checksum != "" {
+						entry.Checksum = reg.Checksum
 					}
 					merged = append(merged, entry)
 					delete(regMap, path)
