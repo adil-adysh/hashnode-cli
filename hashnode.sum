@@ -3,9 +3,4 @@ blog:
     publication_id: 68680814547d9d1973438df5
     publication_slug: https://thereflectiveengineer.hashnode.dev
 series: {}
-articles:
-    t.md:
-        post_id: 695660dd66cc29ba748732ed
-        checksum: 0a9013681e90e2b0efdaba6f39b83c461cde7b95bc96872b3fdb22229c5dd794
-        slug: some-blog-post
-        title: some blog post
+articles: {}
