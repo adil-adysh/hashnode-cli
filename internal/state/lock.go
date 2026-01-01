@@ -43,9 +43,7 @@ func AcquireRepoLock() (func() error, error) {
 
 	release := func() error {
 		err := os.Remove(lockPath)
-		if err == nil {
-			log.Printf("removed lock: %s\n", lockPath)
-		}
+		// Don't log on every release - let caller decide
 		return err
 	}
 	log.Printf("acquired lock: %s\n", lockPath)

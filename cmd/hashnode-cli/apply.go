@@ -22,14 +22,24 @@ var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply planned changes",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if applyDryRun {
+			fmt.Println("apply: dry-run (no API calls, no writes)")
+		}
+
 		// Acquire repo lock
 		release, err := state.AcquireRepoLock()
 		if err != nil {
 			return fmt.Errorf("failed to acquire repo lock: %w", err)
 		}
+
+		// Track if apply completes successfully
+		applySuccess := false
 		defer func() {
 			if err := release(); err != nil {
 				fmt.Printf("warning: failed to remove lock: %v\n", err)
+			} else if applySuccess {
+				// Only log on successful apply to avoid confusion
+				fmt.Println("✓ Released lock")
 			}
 		}()
 
@@ -78,6 +88,45 @@ var applyCmd = &cobra.Command{
 		}
 
 		plan := diff.GeneratePlan(articles, st)
+
+		if applyDryRun {
+			createCount, updateCount, deleteCount, skipCount := 0, 0, 0, 0
+			for _, it := range plan {
+				switch it.Type {
+				case diff.ActionCreate:
+					createCount++
+				case diff.ActionUpdate:
+					updateCount++
+				case diff.ActionDelete:
+					deleteCount++
+				case diff.ActionSkip:
+					skipCount++
+				}
+				reason := it.Reason
+				target := it.Path
+				if it.OldPath != "" {
+					target = fmt.Sprintf("%s (from %s)", it.Path, it.OldPath)
+				}
+				symbol := ""
+				switch it.Type {
+				case diff.ActionCreate:
+					symbol = "🟢"
+				case diff.ActionUpdate:
+					symbol = "🟡"
+				case diff.ActionDelete:
+					symbol = "🔴"
+				case diff.ActionSkip:
+					symbol = "⚪"
+				}
+				if reason != "" {
+					fmt.Printf("%s %-6s %s — %s\n", symbol, it.Type, target, reason)
+				} else {
+					fmt.Printf("%s %-6s %s\n", symbol, it.Type, target)
+				}
+			}
+			fmt.Printf("Summary: %d create, %d update, %d delete, %d skip\n", createCount, updateCount, deleteCount, skipCount)
+			return nil
+		}
 
 		// Validate planned creations for missing/too-short titles before contacting API
 		var bad []string
@@ -145,12 +194,12 @@ var applyCmd = &cobra.Command{
 				if !applyYes {
 					return fmt.Errorf("deletion required for %s (remote id=%s). Re-run with --yes to confirm deletions", it.Path, remoteID)
 				}
-				if _, derr := api.DeletePost(context.Background(), client, remoteID); derr != nil {
+				if _, derr := api.RemovePost(context.Background(), client, api.RemovePostInput{Id: remoteID}); derr != nil {
 					return fmt.Errorf("delete failed for %s (remote id=%s): %w", it.Path, remoteID, derr)
 				}
 				// Queue ledger update
 				ledgerUpdates = append(ledgerUpdates, LedgerUpdate{path: np, isDelete: true})
-				fmt.Printf("Deleted remote post for %s -> %s\n", it.Path, remoteID)
+				fmt.Printf("Deleted post %s -> %s\n", it.Path, remoteID)
 			case diff.ActionUpdate:
 				// find remote id and local metadata
 				var entry diff.RegistryEntry
@@ -305,13 +354,17 @@ var applyCmd = &cobra.Command{
 			return fmt.Errorf("failed to clear stage: %w", err)
 		}
 
+		// Mark as successful so lock release is logged
+		applySuccess = true
 		fmt.Println("apply: completed (created/updated posts and wrote hashnode.sum)")
 		return nil
 	},
 }
 
 var applyYes bool
+var applyDryRun bool
 
 func init() {
 	applyCmd.Flags().BoolVarP(&applyYes, "yes", "y", false, "Confirm and perform destructive deletions (required to remove remote posts)")
+	applyCmd.Flags().BoolVar(&applyDryRun, "dry-run", false, "Preview apply without calling the API or writing state")
 }

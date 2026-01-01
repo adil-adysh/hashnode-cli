@@ -257,11 +257,18 @@ func (v *GetPublicationDataPublication) GetSeriesList() GetPublicationDataPublic
 type GetPublicationDataPublicationPostsPublicationPostConnection struct {
 	// A list of edges containing Post information
 	Edges []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge `json:"edges"`
+	// Information for pagination in Post connection.
+	PageInfo GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo `json:"pageInfo"`
 }
 
 // GetEdges returns GetPublicationDataPublicationPostsPublicationPostConnection.Edges, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationPostsPublicationPostConnection) GetEdges() []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge {
 	return v.Edges
+}
+
+// GetPageInfo returns GetPublicationDataPublicationPostsPublicationPostConnection.PageInfo, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnection) GetPageInfo() GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo {
+	return v.PageInfo
 }
 
 // GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge includes the requested fields of the GraphQL type PostEdge.
@@ -290,12 +297,18 @@ type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNod
 	Title string `json:"title"`
 	// The slug of the post. Used as address of the post on blog. Example - https://johndoe.com/my-post-slug
 	Slug string `json:"slug"`
-	// The publish date of the post.
-	PublishedAt *time.Time `json:"publishedAt"`
+	// Brief is a short description of the post extracted from the content of the post. It's 250 characters long sanitized string.
+	Brief string `json:"brief"`
+	// The date and time the post was published.
+	PublishedAt time.Time `json:"publishedAt"`
 	// Content of the post. Contains HTML and Markdown version of the post content.
 	Content GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent `json:"content"`
+	// Returns list of tags added to the post. Contains tag id, name, slug, etc.
+	Tags []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag `json:"tags"`
 	// Information of the series the post belongs to.
 	Series *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries `json:"series"`
+	// The cover image preference of the post. Contains cover image URL and other details.
+	CoverImage *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage `json:"coverImage"`
 }
 
 // GetId returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Id, and is useful for accessing the field via an interface.
@@ -313,14 +326,34 @@ func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdg
 	return v.Slug
 }
 
+// GetBrief returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Brief, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetBrief() string {
+	return v.Brief
+}
+
+// GetPublishedAt returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.PublishedAt, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetPublishedAt() time.Time {
+	return v.PublishedAt
+}
+
 // GetContent returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Content, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetContent() GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent {
 	return v.Content
 }
 
+// GetTags returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Tags, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetTags() []GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag {
+	return v.Tags
+}
+
 // GetSeries returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.Series, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetSeries() *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries {
 	return v.Series
+}
+
+// GetCoverImage returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost.CoverImage, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePost) GetCoverImage() *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage {
+	return v.CoverImage
 }
 
 // GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent includes the requested fields of the GraphQL type Content.
@@ -332,6 +365,20 @@ type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNod
 // GetMarkdown returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent.Markdown, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostContent) GetMarkdown() string {
 	return v.Markdown
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage includes the requested fields of the GraphQL type PostCoverImage.
+// The GraphQL type's documentation follows.
+//
+// Contains information about the cover image of the post.
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage struct {
+	// The URL of the cover image.
+	Url string `json:"url"`
+}
+
+// GetUrl returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage.Url, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostCoverImage) GetUrl() string {
+	return v.Url
 }
 
 // GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries includes the requested fields of the GraphQL type Series.
@@ -361,6 +408,46 @@ func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdg
 // GetSlug returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries.Slug, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostSeries) GetSlug() string {
 	return v.Slug
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag includes the requested fields of the GraphQL type Tag.
+type GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag struct {
+	// The name of the tag. Shown in tag page.
+	Name string `json:"name"`
+	// The slug of the tag. Used to access tags feed.  Example https://hashnode.com/n/graphql
+	Slug string `json:"slug"`
+}
+
+// GetName returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag.Name, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag) GetName() string {
+	return v.Name
+}
+
+// GetSlug returns GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag.Slug, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdgeNodePostTagsTag) GetSlug() string {
+	return v.Slug
+}
+
+// GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo includes the requested fields of the GraphQL type PageInfo.
+// The GraphQL type's documentation follows.
+//
+// Contains information to help in pagination.
+type GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo struct {
+	// Indicates if there are more pages.
+	HasNextPage *bool `json:"hasNextPage"`
+	// The cursor of the last item in the current page.
+	// Use it as the after input to query the next page.
+	EndCursor *string `json:"endCursor"`
+}
+
+// GetHasNextPage returns GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo.HasNextPage, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo) GetHasNextPage() *bool {
+	return v.HasNextPage
+}
+
+// GetEndCursor returns GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo.EndCursor, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationPostsPublicationPostConnectionPageInfo) GetEndCursor() *string {
+	return v.EndCursor
 }
 
 // GetPublicationDataPublicationSeriesListSeriesConnection includes the requested fields of the GraphQL type SeriesConnection.
@@ -405,6 +492,8 @@ type GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeS
 	Name string `json:"name"`
 	// The slug of the series. Used to access series page.  Example https://johndoe.com/series/series-slug
 	Slug string `json:"slug"`
+	// The description of the series. Contains markdown and html version of the series's description.
+	Description *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent `json:"description"`
 }
 
 // GetId returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Id, and is useful for accessing the field via an interface.
@@ -420,6 +509,22 @@ func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeN
 // GetSlug returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Slug, and is useful for accessing the field via an interface.
 func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries) GetSlug() string {
 	return v.Slug
+}
+
+// GetDescription returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries.Description, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeries) GetDescription() *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent {
+	return v.Description
+}
+
+// GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent includes the requested fields of the GraphQL type Content.
+type GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent struct {
+	// The Markdown version of the content.
+	Markdown string `json:"markdown"`
+}
+
+// GetMarkdown returns GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent.Markdown, and is useful for accessing the field via an interface.
+func (v *GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdgeNodeSeriesDescriptionContent) GetMarkdown() string {
+	return v.Markdown
 }
 
 // GetPublicationDataResponse is returned by GetPublicationData on success.
@@ -645,6 +750,49 @@ func (v *PublishPostTagInput) GetSlug() *string { return v.Slug }
 // GetName returns PublishPostTagInput.Name, and is useful for accessing the field via an interface.
 func (v *PublishPostTagInput) GetName() *string { return v.Name }
 
+type RemovePostInput struct {
+	// The ID of the post to remove.
+	Id string `json:"id"`
+}
+
+// GetId returns RemovePostInput.Id, and is useful for accessing the field via an interface.
+func (v *RemovePostInput) GetId() string { return v.Id }
+
+// RemovePostRemovePostRemovePostPayload includes the requested fields of the GraphQL type RemovePostPayload.
+type RemovePostRemovePostRemovePostPayload struct {
+	// The deleted post.
+	Post *RemovePostRemovePostRemovePostPayloadPost `json:"post"`
+}
+
+// GetPost returns RemovePostRemovePostRemovePostPayload.Post, and is useful for accessing the field via an interface.
+func (v *RemovePostRemovePostRemovePostPayload) GetPost() *RemovePostRemovePostRemovePostPayloadPost {
+	return v.Post
+}
+
+// RemovePostRemovePostRemovePostPayloadPost includes the requested fields of the GraphQL type Post.
+// The GraphQL type's documentation follows.
+//
+// Contains basic information about the post.
+// A post is a published article on Hashnode.
+type RemovePostRemovePostRemovePostPayloadPost struct {
+	// The ID of the post. Used to uniquely identify the post.
+	Id string `json:"id"`
+}
+
+// GetId returns RemovePostRemovePostRemovePostPayloadPost.Id, and is useful for accessing the field via an interface.
+func (v *RemovePostRemovePostRemovePostPayloadPost) GetId() string { return v.Id }
+
+// RemovePostResponse is returned by RemovePost on success.
+type RemovePostResponse struct {
+	// Removes a post.
+	RemovePost RemovePostRemovePostRemovePostPayload `json:"removePost"`
+}
+
+// GetRemovePost returns RemovePostResponse.RemovePost, and is useful for accessing the field via an interface.
+func (v *RemovePostResponse) GetRemovePost() RemovePostRemovePostRemovePostPayload {
+	return v.RemovePost
+}
+
 // SortOrder is a common enum for all types that can be sorted.
 type SortOrder string
 
@@ -824,11 +972,19 @@ func (v *__CreateSeriesInput) GetInput() CreateSeriesInput { return v.Input }
 
 // __GetPublicationDataInput is used internally by genqlient
 type __GetPublicationDataInput struct {
-	Id string `json:"id"`
+	Id    string  `json:"id"`
+	First int     `json:"first"`
+	After *string `json:"after"`
 }
 
 // GetId returns __GetPublicationDataInput.Id, and is useful for accessing the field via an interface.
 func (v *__GetPublicationDataInput) GetId() string { return v.Id }
+
+// GetFirst returns __GetPublicationDataInput.First, and is useful for accessing the field via an interface.
+func (v *__GetPublicationDataInput) GetFirst() int { return v.First }
+
+// GetAfter returns __GetPublicationDataInput.After, and is useful for accessing the field via an interface.
+func (v *__GetPublicationDataInput) GetAfter() *string { return v.After }
 
 // __PublishPostInput is used internally by genqlient
 type __PublishPostInput struct {
@@ -837,6 +993,14 @@ type __PublishPostInput struct {
 
 // GetInput returns __PublishPostInput.Input, and is useful for accessing the field via an interface.
 func (v *__PublishPostInput) GetInput() PublishPostInput { return v.Input }
+
+// __RemovePostInput is used internally by genqlient
+type __RemovePostInput struct {
+	Input RemovePostInput `json:"input"`
+}
+
+// GetInput returns __RemovePostInput.Input, and is useful for accessing the field via an interface.
+func (v *__RemovePostInput) GetInput() RemovePostInput { return v.Input }
 
 // __UpdatePostInput is used internally by genqlient
 type __UpdatePostInput struct {
@@ -928,25 +1092,37 @@ func GetMe(
 
 // The query executed by GetPublicationData.
 const GetPublicationData_Operation = `
-query GetPublicationData ($id: ObjectId!) {
+query GetPublicationData ($id: ObjectId!, $first: Int!, $after: String) {
 	publication(id: $id) {
 		title
-		posts(first: 50) {
+		posts(first: $first, after: $after) {
 			edges {
 				node {
 					id
 					title
 					slug
+					brief
 					publishedAt
 					content {
 						markdown
+					}
+					tags {
+						name
+						slug
 					}
 					series {
 						id
 						name
 						slug
 					}
+					coverImage {
+						url
+					}
 				}
+			}
+			pageInfo {
+				hasNextPage
+				endCursor
 			}
 		}
 		seriesList(first: 50) {
@@ -955,6 +1131,9 @@ query GetPublicationData ($id: ObjectId!) {
 					id
 					name
 					slug
+					description {
+						markdown
+					}
 				}
 			}
 		}
@@ -962,17 +1141,22 @@ query GetPublicationData ($id: ObjectId!) {
 }
 `
 
-// --- 2. Content State (For 'plan') ---
+// --- 2. Content State & Import Engine ---
+// This query handles both 'plan' (checking diffs) and 'import' (downloading everything)
 func GetPublicationData(
 	ctx_ context.Context,
 	client_ graphql.Client,
 	id string,
+	first int,
+	after *string,
 ) (data_ *GetPublicationDataResponse, err_ error) {
 	req_ := &graphql.Request{
 		OpName: "GetPublicationData",
 		Query:  GetPublicationData_Operation,
 		Variables: &__GetPublicationDataInput{
-			Id: id,
+			Id:    id,
+			First: first,
+			After: after,
 		},
 	}
 
@@ -1027,6 +1211,43 @@ func PublishPost(
 	return data_, err_
 }
 
+// The mutation executed by RemovePost.
+const RemovePost_Operation = `
+mutation RemovePost ($input: RemovePostInput!) {
+	removePost(input: $input) {
+		post {
+			id
+		}
+	}
+}
+`
+
+// Remove/delete a post
+func RemovePost(
+	ctx_ context.Context,
+	client_ graphql.Client,
+	input RemovePostInput,
+) (data_ *RemovePostResponse, err_ error) {
+	req_ := &graphql.Request{
+		OpName: "RemovePost",
+		Query:  RemovePost_Operation,
+		Variables: &__RemovePostInput{
+			Input: input,
+		},
+	}
+
+	data_ = &RemovePostResponse{}
+	resp_ := &graphql.Response{Data: data_}
+
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
+	)
+
+	return data_, err_
+}
+
 // The mutation executed by UpdatePost.
 const UpdatePost_Operation = `
 mutation UpdatePost ($input: UpdatePostInput!) {
@@ -1055,64 +1276,6 @@ func UpdatePost(
 	}
 
 	data_ = &UpdatePostResponse{}
-	resp_ := &graphql.Response{Data: data_}
-
-	err_ = client_.MakeRequest(
-		ctx_,
-		req_,
-		resp_,
-	)
-
-	return data_, err_
-}
-
-// __DeletePostInput is used internally by genqlient
-type __DeletePostInput struct {
-	Id string `json:"id"`
-}
-
-// DeletePostDeletePostDeletePostPayload includes the requested fields of the GraphQL type DeletePostPayload.
-type DeletePostDeletePostDeletePostPayload struct {
-	Success bool `json:"success"`
-}
-
-// GetSuccess returns DeletePostDeletePostDeletePostPayload.Success
-func (v *DeletePostDeletePostDeletePostPayload) GetSuccess() bool { return v.Success }
-
-// DeletePostResponse is returned by DeletePost on success.
-type DeletePostResponse struct {
-	DeletePost DeletePostDeletePostDeletePostPayload `json:"deletePost"`
-}
-
-// GetDeletePost returns DeletePostResponse.DeletePost
-func (v *DeletePostResponse) GetDeletePost() DeletePostDeletePostDeletePostPayload {
-	return v.DeletePost
-}
-
-// The mutation executed by DeletePost.
-const DeletePost_Operation = `
-mutation DeletePost ($id: ObjectId!) {
-	deletePost(id: $id) {
-		success
-	}
-}
-`
-
-// Delete an existing post by id
-func DeletePost(
-	ctx_ context.Context,
-	client_ graphql.Client,
-	id string,
-) (data_ *DeletePostResponse, err_ error) {
-	req_ := &graphql.Request{
-		OpName: "DeletePost",
-		Query:  DeletePost_Operation,
-		Variables: &__DeletePostInput{
-			Id: id,
-		},
-	}
-
-	data_ = &DeletePostResponse{}
 	resp_ := &graphql.Response{Data: data_}
 
 	err_ = client_.MakeRequest(

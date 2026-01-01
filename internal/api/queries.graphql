@@ -60,7 +60,9 @@ query GetPublicationData($id: ObjectId!, $first: Int!, $after: String) {
           id
           name
           slug
-          description
+          description {
+            markdown
+          }
         }
       }
     }
@@ -87,6 +89,15 @@ mutation UpdatePost($input: UpdatePostInput!) {
       id
       slug
       updatedAt
+    }
+  }
+}
+
+# Remove/delete a post
+mutation RemovePost($input: RemovePostInput!) {
+  removePost(input: $input) {
+    post {
+      id
     }
   }
 }

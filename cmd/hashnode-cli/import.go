@@ -59,7 +59,8 @@ var importCmd = &cobra.Command{
 
 		// 4. API Call
 		output.Info("Fetching publication data...")
-		resp, err := api.GetPublicationData(context.Background(), client, sum.Blog.PublicationID)
+		// Fetch first 100 posts (can be paginated later if needed)
+		resp, err := api.GetPublicationData(context.Background(), client, sum.Blog.PublicationID, 100, nil)
 		if err != nil {
 			return fmt.Errorf("failed to fetch publication data: %w", err)
 		}
@@ -103,9 +104,9 @@ var importCmd = &cobra.Command{
 				outPath = existingPath
 			} else {
 				// B. New Post: Generate standardized filename
-				published := time.Now().UTC()
-				if post.PublishedAt != nil {
-					published = *post.PublishedAt
+				published := post.PublishedAt
+				if published.IsZero() {
+					published = time.Now().UTC()
 				}
 				year, month := published.Year(), int(published.Month())
 				outDir := fmt.Sprintf("%04d/%02d", year, month)

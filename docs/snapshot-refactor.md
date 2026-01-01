@@ -45,8 +45,6 @@ Extracted snapshot management from `stage.go` into a dedicated `snapshot.go` mod
 - Added: `GCStaleSnapshots()` wrapper (delegates to SnapshotStore)
 - Removed: Unused `log` import
 
-#### `internal/state/root.go`
-**Added**: `ResetProjectRootCache()` for testing
 - Clears `cachedRoot`, `cachedErr`, and `rootOnce`
 - Required for tests that change working directory
 
