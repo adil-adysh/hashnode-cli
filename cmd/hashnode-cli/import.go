@@ -57,15 +57,27 @@ var importCmd = &cobra.Command{
 			}
 		}
 
-		// 4. API Call
-		output.Info("Fetching publication data...")
-		// Fetch first 100 posts (can be paginated later if needed)
-		resp, err := api.GetPublicationData(context.Background(), client, sum.Blog.PublicationID, 100, nil)
-		if err != nil {
-			return fmt.Errorf("failed to fetch publication data: %w", err)
-		}
-		if resp == nil || resp.Publication == nil {
-			return fmt.Errorf("no publication data returned")
+		// 4. API Call (paginated: API max page size is 50)
+		output.Info("Fetching publication data (paginated)...")
+		var allPosts []api.GetPublicationDataPublicationPostsPublicationPostConnectionEdgesPostEdge
+		var seriesEdges []api.GetPublicationDataPublicationSeriesListSeriesConnectionEdgesSeriesEdge
+		var after *string
+		for {
+			resp, rerr := api.GetPublicationData(context.Background(), client, sum.Blog.PublicationID, 50, after)
+			if rerr != nil {
+				return fmt.Errorf("failed to fetch publication data: %w", rerr)
+			}
+			if resp == nil || resp.Publication == nil {
+				return fmt.Errorf("no publication data returned")
+			}
+			if seriesEdges == nil {
+				seriesEdges = resp.Publication.SeriesList.Edges
+			}
+			allPosts = append(allPosts, resp.Publication.Posts.Edges...)
+			if resp.Publication.Posts.PageInfo.HasNextPage == nil || !*resp.Publication.Posts.PageInfo.HasNextPage {
+				break
+			}
+			after = resp.Publication.Posts.PageInfo.EndCursor
 		}
 
 		// 5. Update Ledger Series
@@ -73,7 +85,7 @@ var importCmd = &cobra.Command{
 		if sum.Series == nil {
 			sum.Series = make(map[string]state.SeriesEntry)
 		}
-		for _, edge := range resp.Publication.SeriesList.Edges {
+		for _, edge := range seriesEdges {
 			n := edge.Node
 			sum.Series[n.Slug] = state.SeriesEntry{
 				SeriesID: n.Id,
@@ -92,7 +104,7 @@ var importCmd = &cobra.Command{
 		}
 
 		// 7. Process Posts (The Core Loop)
-		for _, edge := range resp.Publication.Posts.Edges {
+		for _, edge := range allPosts {
 			post := edge.Node
 			content := post.Content.Markdown
 			checksum := state.ChecksumFromContent([]byte(content))
