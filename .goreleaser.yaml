@@ -39,3 +39,17 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+scoops:
+  - name: hn
+    repository:
+      owner: adil-adysh
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.GORELEASER_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaser
+      email: noreply@goreleaser.com
+    description: "Hashnode CLI"
+    homepage: "https://github.com/adil-adysh/hashnode-cli"
+    license: MIT
+    url_template: "https://github.com/adil-adysh/hashnode-cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"

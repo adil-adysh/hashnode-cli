@@ -36,3 +36,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_GITHUB_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
