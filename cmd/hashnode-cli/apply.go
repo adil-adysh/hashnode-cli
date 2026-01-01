@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
@@ -255,7 +256,7 @@ var applyCmd = &cobra.Command{
 				}
 				pubID := s.Blog.PublicationID
 				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content, Title: &title, PublicationId: &pubID}
-				applyFrontmatterToUpdateInput(&input, fm)
+				applyFrontmatterToUpdateInput(&input, fm, s)
 				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
@@ -312,7 +313,7 @@ var applyCmd = &cobra.Command{
 				}
 
 				input := api.PublishPostInput{Title: title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
-				applyFrontmatterToPublishInput(&input, fm)
+				applyFrontmatterToPublishInput(&input, fm, s)
 				resp, perr := api.PublishPost(context.Background(), client, input)
 				if perr != nil {
 					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
@@ -387,7 +388,7 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyDryRun, "dry-run", false, "Preview apply without calling the API or writing state")
 }
 
-func applyFrontmatterToPublishInput(input *api.PublishPostInput, fm *state.Frontmatter) {
+func applyFrontmatterToPublishInput(input *api.PublishPostInput, fm *state.Frontmatter, sum *state.Sum) {
 	if fm == nil {
 		return
 	}
@@ -430,9 +431,12 @@ func applyFrontmatterToPublishInput(input *api.PublishPostInput, fm *state.Front
 	}
 
 	if len(fm.Tags) > 0 {
-		for _, t := range fm.Tags {
-			tag := t
-			input.Tags = append(input.Tags, api.PublishPostTagInput{Name: &tag})
+		input.Tags = append(input.Tags, tagsToInputs(fm.Tags)...)
+	}
+
+	if fm.Series != "" {
+		if sid := resolveSeriesID(fm.Series, sum); sid != "" {
+			input.SeriesId = &sid
 		}
 	}
 
@@ -466,7 +470,7 @@ func applyFrontmatterToPublishInput(input *api.PublishPostInput, fm *state.Front
 	}
 }
 
-func applyFrontmatterToUpdateInput(input *api.UpdatePostInput, fm *state.Frontmatter) {
+func applyFrontmatterToUpdateInput(input *api.UpdatePostInput, fm *state.Frontmatter, sum *state.Sum) {
 	if fm == nil {
 		return
 	}
@@ -506,9 +510,12 @@ func applyFrontmatterToUpdateInput(input *api.UpdatePostInput, fm *state.Frontma
 	}
 
 	if len(fm.Tags) > 0 {
-		for _, t := range fm.Tags {
-			tag := t
-			input.Tags = append(input.Tags, api.PublishPostTagInput{Name: &tag})
+		input.Tags = append(input.Tags, tagsToInputs(fm.Tags)...)
+	}
+
+	if fm.Series != "" {
+		if sid := resolveSeriesID(fm.Series, sum); sid != "" {
+			input.SeriesId = &sid
 		}
 	}
 
@@ -551,4 +558,50 @@ func boolPtrOrNil(v bool) *bool {
 		return nil
 	}
 	return &v
+}
+
+func tagsToInputs(tags []string) []api.PublishPostTagInput {
+	var out []api.PublishPostTagInput
+	for _, t := range tags {
+		name := strings.TrimSpace(t)
+		if name == "" {
+			continue
+		}
+		slug := slugifyTag(name)
+		out = append(out, api.PublishPostTagInput{Name: &name, Slug: &slug})
+	}
+	return out
+}
+
+func slugifyTag(s string) string {
+	s = strings.ToLower(s)
+	// Replace non-alphanumeric with hyphen
+	clean := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, s)
+	// Collapse repeated hyphens and trim
+	for strings.Contains(clean, "--") {
+		clean = strings.ReplaceAll(clean, "--", "-")
+	}
+	clean = strings.Trim(clean, "-")
+	if clean == "" {
+		return "tag"
+	}
+	return clean
+}
+
+func resolveSeriesID(name string, sum *state.Sum) string {
+	if sum == nil || len(sum.Series) == 0 {
+		return ""
+	}
+	slug := state.SeriesSlug(name)
+	for _, se := range sum.Series {
+		if strings.EqualFold(se.Name, name) || strings.EqualFold(se.Slug, slug) {
+			return se.SeriesID
+		}
+	}
+	return ""
 }

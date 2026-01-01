@@ -1,12 +1,8 @@
 ---
 title: "some blog post"
+tags:  ["test", "someone cares"]
 ---
 # testing blog post 
 
 
-
-test text
-
-asdf
-
-test
+things are working fine for now.    
