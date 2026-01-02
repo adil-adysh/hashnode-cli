@@ -1,15 +1,23 @@
+# .goreleaser.yaml
 version: 2
-project_name: hn
+project_name: hashnode-cli
+
+before:
+  hooks:
+    - go mod tidy
+
 builds:
-  - id: hn
+  - id: hn-build
     main: ./cmd/hashnode-cli
     binary: hn
     env:
+      # Disable CGO to ensure binaries are statically linked and portable across Linux distros
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
-      - -s -w
+      # -s -w: Strip debug information to reduce binary size
+      - -s -w -X main.version={{.Version}}
     goos:
       - linux
       - darwin
@@ -17,30 +25,33 @@ builds:
     goarch:
       - amd64
       - arm64
+
 archives:
   - id: archive
-    ids:
-      - hn
-    formats:
-      - tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - README.md
+
 checksum:
   name_template: checksums.txt
+
 changelog:
   use: git
+  sort: asc
   filters:
     exclude:
       - '^docs:'
       - '^test:'
+      - '^chore:'
+      - '^merge:'
+
+# -------------------------------------------------------------------------
+# Scoop (Windows Package Manager)
+# -------------------------------------------------------------------------
 scoops:
   - name: hn
+    # Target repository for the manifest (requires 'repo' scope token)
     repository:
       owner: adil-adysh
       name: scoop-bucket
@@ -50,7 +61,79 @@ scoops:
     commit_author:
       name: goreleaser
       email: noreply@goreleaser.com
-    description: "Hashnode CLI"
+    description: "Unofficial Hashnode CLI - Write and manage blogs from your terminal."
     homepage: "https://github.com/adil-adysh/hashnode-cli"
-    license: MIT
-    url_template: "https://github.com/adil-adysh/hashnode-cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    license: "Apache-2.0"
+
+# -------------------------------------------------------------------------
+# Snapcraft (Linux Snap Store)
+# -------------------------------------------------------------------------
+snapcrafts:
+  - id: hn-snap
+    ids:
+      - hn-build
+    
+    # 'hn' is the desired package name. 
+    # Ensure ownership via `snapcraft register hn` before pushing.
+    name: hn
+    
+    summary: "Unofficial CLI for Hashnode"
+    description: |
+      A community-built CLI for Hashnode. Write, manage, and publish your
+      Hashnode blogs directly from your terminal. 
+      (Unofficial tool, not affiliated with Hashnode).
+    
+    grade: stable
+    channel_templates:
+      - stable
+    
+    # Use 'strict' to ensure automated store acceptance without manual review.
+    # 'core22' provides a modern Ubuntu 22.04 runtime base.
+    confinement: strict
+    base: core22
+    license: Apache-2.0
+    
+    # Define app permissions (plugs) required for the CLI to function.
+    apps:
+      hn:
+        command: hn
+        plugs:
+          - home             # Read/write files in user's home directory
+          - network          # Access external APIs (Hashnode)
+          - removable-media  # Access files on mounted drives
+    
+    # Automatically push to the Snap Store if SNAPCRAFT_STORE_CREDENTIALS is set
+    publish: true
+
+# -------------------------------------------------------------------------
+# NFPM (Native Linux Packages: .deb / .rpm)
+# -------------------------------------------------------------------------
+nfpms:
+  - id: hn-packages
+    package_name: hn
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+    vendor: "Adil Adysh"
+    homepage: "https://github.com/adil-adysh/hashnode-cli"
+    maintainer: "Adil Adysh <ah.shaikh97@gmail.com>"
+    description: "Unofficial Hashnode CLI for blogging from the terminal."
+    license: "Apache-2.0"
+    formats:
+      - deb
+      - rpm
+    # Install license/copyright to standard Linux doc path
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/hn/copyright
+        file_info:
+          mode: 0644
+
+# -------------------------------------------------------------------------
+# GitHub Release Integration
+# -------------------------------------------------------------------------
+release:
+  github:
+    owner: adil-adysh
+    name: hashnode-cli
+  draft: false
+  # Automatically mark as "Pre-release" if the tag contains a suffix (e.g., v1.0.0-rc1)
+  prerelease: auto

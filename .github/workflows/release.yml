@@ -6,9 +6,9 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: write # Required to create GitHub Releases and upload assets
+  packages: write # Required if you later decide to push Docker images to GHCR
+  id-token: write # Required for keyless signing (Cosign) if enabled in the future
 
 jobs:
   release:
@@ -17,6 +17,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # fetch-depth: 0 is critical for GoReleaser to access the full git history
+          # to generate changelogs and calculate version diffs correctly.
           fetch-depth: 0
 
       - name: Set up Go
@@ -25,7 +27,13 @@ jobs:
           go-version: "1.24.6"
           cache: true
 
+      - name: Install Snapcraft
+        # Snapcraft is required to build the .snap package.
+        # We explicitly install it to ensure the binary is available on the runner.
+        run: sudo snap install snapcraft --classic
+
       - name: Run tests
+        # Ensure we never release a broken build
         run: go test ./...
 
       - name: Run GoReleaser
@@ -35,5 +43,13 @@ jobs:
           version: latest
           args: release --clean
         env:
+          # Standard GitHub token for creating the Release and uploading artifacts
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Your Personal Access Token (PAT) with 'repo' scope.
+          # Required to push the manifest to your separate 'scoop-bucket' repository.
           GORELEASER_GITHUB_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          
+          # Snapcraft Store credentials for publishing the Snap package.
+          # Maps your secret 'SNAP_CRAFT_TOKEN' to the env var GoReleaser expects.
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAP_CRAFT_TOKEN }}
