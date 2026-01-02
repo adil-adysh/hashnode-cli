@@ -1,14 +1,14 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
-    
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/Khan/genqlient/graphql"
