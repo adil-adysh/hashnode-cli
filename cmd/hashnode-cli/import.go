@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"bytes"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+    
+	"gopkg.in/yaml.v3"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
@@ -73,11 +76,22 @@ var importCmd = &cobra.Command{
 			if seriesEdges == nil {
 				seriesEdges = resp.Publication.SeriesList.Edges
 			}
+			pageCount := len(resp.Publication.Posts.Edges)
+			output.Info("Fetched page: %d posts (hasNext=%v)", pageCount, resp.Publication.Posts.PageInfo.HasNextPage != nil && *resp.Publication.Posts.PageInfo.HasNextPage)
 			allPosts = append(allPosts, resp.Publication.Posts.Edges...)
 			if resp.Publication.Posts.PageInfo.HasNextPage == nil || !*resp.Publication.Posts.PageInfo.HasNextPage {
 				break
 			}
 			after = resp.Publication.Posts.PageInfo.EndCursor
+		}
+
+		// Diagnostic: show total and date range
+		if len(allPosts) > 0 {
+			first := allPosts[0].Node.PublishedAt
+			last := allPosts[len(allPosts)-1].Node.PublishedAt
+			output.Info("Total posts fetched: %d; first=%s last=%s", len(allPosts), first.UTC().Format(time.RFC3339), last.UTC().Format(time.RFC3339))
+		} else {
+			output.Info("Total posts fetched: 0")
 		}
 
 		// 5. Update Ledger Series
@@ -147,7 +161,46 @@ var importCmd = &cobra.Command{
 			}
 
 			if shouldWrite {
-				if err := os.WriteFile(filepath.FromSlash(outPath), []byte(content), 0644); err != nil {
+				// Build frontmatter from remote post metadata
+				fm := state.Frontmatter{
+					Title: post.Title,
+					Slug:  post.Slug,
+				}
+				// Tags
+				if len(post.Tags) > 0 {
+					var tags []string
+					for _, t := range post.Tags {
+						tags = append(tags, t.Name)
+					}
+					fm.Tags = tags
+				}
+				// PublishedAt
+				if !post.PublishedAt.IsZero() {
+					t := post.PublishedAt
+					fm.PublishedAt = &t
+				}
+				// Cover image
+				if post.CoverImage != nil && post.CoverImage.Url != "" {
+					fm.CoverImageURL = post.CoverImage.Url
+				}
+				// Series
+				if post.Series != nil {
+					fm.Series = post.Series.Name
+				}
+
+				// Marshal YAML frontmatter
+				yf, err := yaml.Marshal(&fm)
+				if err != nil {
+					return fmt.Errorf("failed to marshal frontmatter for %s: %w", outPath, err)
+				}
+
+				var buf bytes.Buffer
+				buf.WriteString("---\n")
+				buf.Write(yf)
+				buf.WriteString("---\n\n")
+				buf.WriteString(content)
+
+				if err := os.WriteFile(filepath.FromSlash(outPath), buf.Bytes(), 0644); err != nil {
 					return fmt.Errorf("failed to write file %s: %w", outPath, err)
 				}
 			}
