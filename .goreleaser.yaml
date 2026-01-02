@@ -9,14 +9,13 @@ before:
 builds:
   - id: hn-build
     main: ./cmd/hashnode-cli
+    # BINARY NAME: The executable file will be named 'hn'
     binary: hn
     env:
-      # Disable CGO to ensure binaries are statically linked and portable across Linux distros
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
-      # -s -w: Strip debug information to reduce binary size
       - -s -w -X main.version={{.Version}}
     goos:
       - linux
@@ -47,11 +46,10 @@ changelog:
       - '^merge:'
 
 # -------------------------------------------------------------------------
-# Scoop (Windows Package Manager)
+# Scoop (Windows)
 # -------------------------------------------------------------------------
 scoops:
   - name: hn
-    # Target repository for the manifest (requires 'repo' scope token)
     repository:
       owner: adil-adysh
       name: scoop-bucket
@@ -73,9 +71,8 @@ snapcrafts:
     ids:
       - hn-build
     
-    # 'hn' is the desired package name. 
-    # Ensure ownership via `snapcraft register hn` before pushing.
-    name: hn
+    # SNAP NAME: Must match the name you registered: 'hashnode-cli'
+    name: hashnode-cli
     
     summary: "Unofficial CLI for Hashnode"
     description: |
@@ -87,30 +84,30 @@ snapcrafts:
     channel_templates:
       - stable
     
-    # Use 'strict' to ensure automated store acceptance without manual review.
-    # 'core22' provides a modern Ubuntu 22.04 runtime base.
+    # Strict confinement = Automated security checks (no manual review needed)
     confinement: strict
     base: core22
     license: Apache-2.0
     
-    # Define app permissions (plugs) required for the CLI to function.
+    # APP MAPPING: The snap is 'hashnode-cli', but the command users type is 'hn'
     apps:
       hn:
         command: hn
         plugs:
-          - home             # Read/write files in user's home directory
-          - network          # Access external APIs (Hashnode)
-          - removable-media  # Access files on mounted drives
+          - home
+          - network
+          - removable-media
     
-    # Automatically push to the Snap Store if SNAPCRAFT_STORE_CREDENTIALS is set
     publish: true
 
 # -------------------------------------------------------------------------
-# NFPM (Native Linux Packages: .deb / .rpm)
+# NFPM (.deb / .rpm)
 # -------------------------------------------------------------------------
 nfpms:
   - id: hn-packages
+    # PACKAGE NAME: Users install via 'apt install hn'
     package_name: hn
+    
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
     vendor: "Adil Adysh"
     homepage: "https://github.com/adil-adysh/hashnode-cli"
@@ -120,7 +117,6 @@ nfpms:
     formats:
       - deb
       - rpm
-    # Install license/copyright to standard Linux doc path
     contents:
       - src: ./LICENSE
         dst: /usr/share/doc/hn/copyright
@@ -128,12 +124,11 @@ nfpms:
           mode: 0644
 
 # -------------------------------------------------------------------------
-# GitHub Release Integration
+# GitHub Releases
 # -------------------------------------------------------------------------
 release:
   github:
     owner: adil-adysh
     name: hashnode-cli
   draft: false
-  # Automatically mark as "Pre-release" if the tag contains a suffix (e.g., v1.0.0-rc1)
   prerelease: auto
