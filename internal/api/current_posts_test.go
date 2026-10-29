@@ -7,7 +7,7 @@ import (
 )
 
 func stringPtr(s string) *string { return &s }
-func boolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool       { return &b }
 
 func TestCurrentPublishInput(t *testing.T) {
 	toc, delisted := true, false
