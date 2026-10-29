@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l cmd/hashnode-cli internal/api)" ]; then
+            gofmt -l cmd/hashnode-cli internal/api
+            exit 1
+          fi
+      - name: Run tests
+        run: go test ./...
+      - name: Go vet
+        run: go vet ./...

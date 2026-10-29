@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/api"
@@ -41,8 +39,7 @@ var importCmd = &cobra.Command{
 			return fmt.Errorf("no token configured; run 'hashnode init'")
 		}
 
-		httpClient := &http.Client{Transport: &authedTransport{token: cfg.Token, wrapped: http.DefaultTransport}}
-		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
+		client := api.NewClient(cfg.Token)
 
 		// 3. Load Ledger (The Source of Truth)
 		sum, err := state.LoadSum()

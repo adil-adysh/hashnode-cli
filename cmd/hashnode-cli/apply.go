@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/api"
@@ -14,8 +12,6 @@ import (
 	"adil-adysh/hashnode-cli/internal/diff"
 	"adil-adysh/hashnode-cli/internal/state"
 )
-
-// reuses authedTransport declared in init.go
 
 var applyCmd = &cobra.Command{
 	Use:   "apply",
@@ -51,8 +47,7 @@ var applyCmd = &cobra.Command{
 			return fmt.Errorf("no token configured; run 'hashnode init'")
 		}
 
-		httpClient := &http.Client{Transport: &authedTransport{token: cfg.Token, wrapped: http.DefaultTransport}}
-		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
+		client := api.NewClient(cfg.Token)
 
 		// Load stage and determine which paths are staged
 		st, err := state.LoadStage()
@@ -238,7 +233,7 @@ var applyCmd = &cobra.Command{
 				pubID := s.Blog.PublicationID
 				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content, Title: &title, PublicationId: &pubID}
 				applyutil.ApplyFrontmatterToUpdateInput(&input, fm, s)
-				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
+				if _, uerr := api.UpdatePostCurrent(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
 
@@ -277,7 +272,7 @@ var applyCmd = &cobra.Command{
 
 				input := api.PublishPostInput{Title: title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
 				applyutil.ApplyFrontmatterToPublishInput(&input, fm, s)
-				resp, perr := api.PublishPost(context.Background(), client, input)
+				resp, perr := api.PublishPostCurrent(context.Background(), client, input)
 				if perr != nil {
 					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
 				}
