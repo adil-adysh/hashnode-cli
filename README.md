@@ -131,15 +131,22 @@ my-blog/
 ```yaml
 ---
 title: "Understanding Go Interfaces"
+subtitle: "A practical explanation"
 slug: "go-interfaces-deep-dive"
-published: true
-tags: ["go","programming"]
-canonical: "https://myblog.dev/go-interfaces"
+tags: ["go", "programming"]
+meta_title: "Understanding Go Interfaces"
+meta_description: "A practical guide to interfaces in Go."
+toc: true
+disable_comments: false
+# canonical: "https://original.example.com/go-interfaces"  # only for cross-posts
 ---
 ```
 
-Required: `title`
-Optional: `slug`, `published`, `tags`, `canonical`
+Required: `title`. Supported optional metadata includes `subtitle`, `slug`, `tags`, `canonical`, `meta_title`, `meta_description`, `meta_image`, `cover_image_url`, `toc`, `disable_comments`, and `delisted`.
+
+Hashnode now uses `https://gql-beta.hashnode.com/` for GraphQL. Publishing and publication-scoped API reads require an active **Hashnode Pro** plan. `hn apply` **publishes immediately**; it does not create a remote draft. Unsupported publishing options fail explicitly rather than being silently ignored. To prevent posting, use `hn apply --dry-run` (or `hn plan`) first.
+
+**Note:** This is the custom Go `hn` CLI, not the official Hashnode CLI. Its YAML field names are snake_case (for example, `meta_title` and `toc`).
 
 ---
 
