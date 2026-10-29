@@ -233,7 +233,7 @@ var applyCmd = &cobra.Command{
 				pubID := s.Blog.PublicationID
 				input := api.UpdatePostInput{Id: entry.RemotePostID, ContentMarkdown: &content, Title: &title, PublicationId: &pubID}
 				applyutil.ApplyFrontmatterToUpdateInput(&input, fm, s)
-				if _, uerr := api.UpdatePost(context.Background(), client, input); uerr != nil {
+				if _, uerr := api.UpdatePostCurrent(context.Background(), client, input); uerr != nil {
 					return fmt.Errorf("update failed for %s: %w", it.Path, uerr)
 				}
 
@@ -272,7 +272,7 @@ var applyCmd = &cobra.Command{
 
 				input := api.PublishPostInput{Title: title, PublicationId: s.Blog.PublicationID, ContentMarkdown: content}
 				applyutil.ApplyFrontmatterToPublishInput(&input, fm, s)
-				resp, perr := api.PublishPost(context.Background(), client, input)
+				resp, perr := api.PublishPostCurrent(context.Background(), client, input)
 				if perr != nil {
 					return fmt.Errorf("publish failed for %s: %w", it.Path, perr)
 				}
