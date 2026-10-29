@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 
 	"adil-adysh/hashnode-cli/internal/api"
@@ -14,8 +12,6 @@ import (
 	"adil-adysh/hashnode-cli/internal/diff"
 	"adil-adysh/hashnode-cli/internal/state"
 )
-
-// reuses authedTransport declared in init.go
 
 var applyCmd = &cobra.Command{
 	Use:   "apply",
@@ -51,8 +47,7 @@ var applyCmd = &cobra.Command{
 			return fmt.Errorf("no token configured; run 'hashnode init'")
 		}
 
-		httpClient := &http.Client{Transport: &authedTransport{token: cfg.Token, wrapped: http.DefaultTransport}}
-		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
+		client := api.NewClient(cfg.Token)
 
 		// Load stage and determine which paths are staged
 		st, err := state.LoadStage()
