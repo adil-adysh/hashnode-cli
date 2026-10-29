@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -18,17 +16,6 @@ import (
 	"adil-adysh/hashnode-cli/internal/config"
 	"adil-adysh/hashnode-cli/internal/state"
 )
-
-// authedTransport injects the Personal Access Token into every request
-type authedTransport struct {
-	token   string
-	wrapped http.RoundTripper
-}
-
-func (t *authedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", t.token)
-	return t.wrapped.RoundTrip(req)
-}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -60,13 +47,7 @@ var initCmd = &cobra.Command{
 		}
 
 		// 2. Setup the API Client
-		httpClient := &http.Client{
-			Transport: &authedTransport{
-				token:   token,
-				wrapped: http.DefaultTransport,
-			},
-		}
-		client := graphql.NewClient("https://gql.hashnode.com", httpClient)
+		client := api.NewClient(token)
 
 		// 3. Verify Token via API
 		output.Info("⏳ Verifying token and fetching user details...\n")
