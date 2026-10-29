@@ -19,8 +19,8 @@ func PublishPostCurrent(ctx context.Context, client graphql.Client, input Publis
 	}
 	response := &PublishPostResponse{}
 	err = client.MakeRequest(ctx, &graphql.Request{
-		OpName: "PublishPost",
-		Query:  PublishPost_Operation,
+		OpName:    "PublishPost",
+		Query:     PublishPost_Operation,
 		Variables: map[string]any{"input": vars},
 	}, &graphql.Response{Data: response})
 	return response, err
@@ -33,8 +33,8 @@ func UpdatePostCurrent(ctx context.Context, client graphql.Client, input UpdateP
 	}
 	response := &UpdatePostResponse{}
 	err = client.MakeRequest(ctx, &graphql.Request{
-		OpName: "UpdatePost",
-		Query:  UpdatePost_Operation,
+		OpName:    "UpdatePost",
+		Query:     UpdatePost_Operation,
 		Variables: map[string]any{"input": vars},
 	}, &graphql.Response{Data: response})
 	return response, err
@@ -45,8 +45,8 @@ func currentPublishInput(in PublishPostInput) (map[string]any, error) {
 		return nil, fmt.Errorf("publishing an existing draft requires publishDraft, not publishPost")
 	}
 	out := map[string]any{
-		"publicationId":  in.PublicationId,
-		"title":          in.Title,
+		"publicationId":   in.PublicationId,
+		"title":           in.Title,
 		"contentMarkdown": in.ContentMarkdown,
 	}
 	setString(out, "subtitle", in.Subtitle)
