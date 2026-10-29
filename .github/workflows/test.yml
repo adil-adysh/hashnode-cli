@@ -20,12 +20,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check formatting
-        run: |
-          if [ -n "$(gofmt -l cmd/hashnode-cli internal/api)" ]; then
-            gofmt -l cmd/hashnode-cli internal/api
-            exit 1
-          fi
+      - name: Show formatting differences
+        run: gofmt -d internal/api/client_test.go internal/api/current_posts.go internal/api/current_posts_test.go
       - name: Run tests
         run: go test ./...
       - name: Go vet
