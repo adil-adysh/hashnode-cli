@@ -29,8 +29,8 @@ func TestAuthTransportBearerHeader(t *testing.T) {
 					}
 					return &http.Response{
 						StatusCode: 200,
-						Header: http.Header{"Content-Type": []string{"application/json"}},
-						Body: io.NopCloser(strings.NewReader(`{"data":{}}`)),
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"data":{}}`)),
 					}, nil
 				}),
 			}
@@ -52,8 +52,8 @@ func TestAuthTransportRejectsHTML(t *testing.T) {
 		next: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: 200,
-				Header: http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
-				Body: io.NopCloser(strings.NewReader("<html>error</html>")),
+				Header:     http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+				Body:       io.NopCloser(strings.NewReader("<html>error</html>")),
 			}, nil
 		}),
 	}
